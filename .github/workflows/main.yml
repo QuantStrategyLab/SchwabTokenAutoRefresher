@@ -45,6 +45,7 @@ jobs:
         with:
           name: debug-screenshots
           path: '*.png'
+          retention-days: 3
 
       - name: Update Log (Bash Version)
         if: success()
