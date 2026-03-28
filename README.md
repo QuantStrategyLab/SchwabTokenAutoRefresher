@@ -29,10 +29,17 @@ Go to **Settings > Secrets and variables > Actions** in your repo and add:
 | `SCHWAB_TOTP_SECRET` | Your 2FA/MFA secret key (Base32) |
 | `SCHWAB_API_KEY` | Your Schwab Developer App Client ID |
 | `SCHWAB_APP_SECRET` | Your Schwab Developer App Client Secret |
-| `GCP_PROJECT_ID` | Your Google Cloud Project ID |
 | `GCP_SA_KEY` | JSON key for a GCP Service Account with Secret Manager permissions |
+
+These values are better stored as **GitHub Variables** because they are configuration, not credentials:
+
+| Variable Name | Description |
+| :--- | :--- |
+| `GCP_PROJECT_ID` | Your Google Cloud Project ID |
 | `GCP_SECRET_ID` | The name of the secret in Secret Manager |
-| `SCHWAB_REDIRECT_URI` | Your App's registered redirect URI |
+| `SCHWAB_REDIRECT_URI` | Your app's registered redirect URI |
+
+Backward compatibility: the workflow still falls back to repo secrets with the same names if you haven't moved these three values into Variables yet.
 
 ### 2. Enable the Workflow
 1. Navigate to the **Actions** tab of your repository.
