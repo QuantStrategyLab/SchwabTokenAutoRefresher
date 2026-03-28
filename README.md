@@ -39,8 +39,6 @@ These values are better stored as **GitHub Variables** because they are configur
 | `GCP_SECRET_ID` | The name of the secret in Secret Manager |
 | `SCHWAB_REDIRECT_URI` | Your app's registered redirect URI |
 
-Backward compatibility: the workflow still falls back to repo secrets with the same names if you haven't moved these three values into Variables yet.
-
 ### 2. Enable the Workflow
 1. Navigate to the **Actions** tab of your repository.
 2. Select **Schwab Token Auto Refresher** from the left sidebar.

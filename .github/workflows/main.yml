@@ -35,9 +35,9 @@ jobs:
           SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}
           SCHWAB_API_KEY: ${{ secrets.SCHWAB_API_KEY }}
           SCHWAB_APP_SECRET: ${{ secrets.SCHWAB_APP_SECRET }}
-          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || secrets.GCP_PROJECT_ID }}
-          GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID || secrets.GCP_SECRET_ID }}
-          SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI || secrets.SCHWAB_REDIRECT_URI }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID }}
+          SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}
 
       - name: Upload Error Screenshot
         if: failure()
