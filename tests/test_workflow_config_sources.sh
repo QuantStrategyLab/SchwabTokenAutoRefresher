@@ -11,6 +11,8 @@ grep -Fq 'GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}' "$workflow_file"
 grep -Fq 'SCHWAB_USERNAME: ${{ secrets.SCHWAB_USERNAME }}' "$workflow_file"
 grep -Fq 'SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}' "$workflow_file"
 grep -Fq 'SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}' "$workflow_file"
+grep -Fq 'permissions:' "$workflow_file"
+grep -Fq 'contents: write' "$workflow_file"
 
 if grep -Fq 'secrets.GCP_PROJECT_ID' "$workflow_file"; then
   echo "workflow should not read GCP_PROJECT_ID from secrets anymore" >&2
