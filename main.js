@@ -32,6 +32,9 @@ const DELAYS = {
     BETWEEN_CLICKS: { min: 3000, max: 5000 },
 };
 const VIEWPORT = { width: 1280, height: 800 };
+const TOTP_PERIOD_SECONDS = 30;
+const TOTP_MIN_VALIDITY_SECONDS = 20;
+const TWO_FA_MAX_ATTEMPTS = 2;
 
 // --- Helpers ---
 const humanDelay = (min = 2000, max = 5000) =>
@@ -70,6 +73,52 @@ async function smartClick(page, targetName, selector = null, timeout = TIMEOUTS.
             }
         }
         return false;
+    }
+}
+
+async function waitForFreshTotpWindow(minRemainingSeconds = TOTP_MIN_VALIDITY_SECONDS) {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const secondsIntoWindow = nowSeconds % TOTP_PERIOD_SECONDS;
+    const remainingSeconds = TOTP_PERIOD_SECONDS - secondsIntoWindow;
+    if (remainingSeconds < minRemainingSeconds) {
+        const waitMs = (remainingSeconds + 1) * 1000;
+        console.log(`Waiting ${waitMs}ms for a fresh TOTP window...`);
+        await humanDelay(waitMs, waitMs + 250);
+    }
+}
+
+async function submitTwoFactorCode(page) {
+    const codeInput = page.getByRole('spinbutton', { name: 'Security Code' });
+    await codeInput.waitFor({ timeout: TIMEOUTS.TWO_FA });
+
+    const continueButton = page.getByRole('button', { name: 'Continue' });
+    const totp = new TOTP({ secret: TOTP_SECRET.replace(/\s/g, "") });
+
+    for (let attempt = 1; attempt <= TWO_FA_MAX_ATTEMPTS; attempt += 1) {
+        await waitForFreshTotpWindow();
+        const token = totp.generate();
+        console.log(`Submitting 2FA code, attempt ${attempt}/${TWO_FA_MAX_ATTEMPTS}...`);
+        await codeInput.fill('');
+        await codeInput.fill(token);
+        await continueButton.click();
+        await page.waitForTimeout(3000);
+
+        const invalidCodeMessage = page.getByText('Enter a valid 6-digit security code.');
+        const loginErrorBanner = page.getByText(/We cant log you in right now/i);
+        const stillOnCodePage =
+            (await codeInput.isVisible().catch(() => false)) &&
+            ((await invalidCodeMessage.isVisible().catch(() => false)) ||
+                (await loginErrorBanner.isVisible().catch(() => false)));
+
+        if (!stillOnCodePage) {
+            return;
+        }
+
+        if (attempt === TWO_FA_MAX_ATTEMPTS) {
+            throw new Error('2FA code was rejected after retry.');
+        }
+
+        console.log('2FA code was rejected, retrying with a fresh TOTP code...');
     }
 }
 
@@ -146,14 +195,10 @@ async function main() {
 
         console.log("3. Processing 2FA code...");
         try {
-            const codeInput = page.getByRole('spinbutton', { name: 'Security Code' });
-            await codeInput.waitFor({ timeout: TIMEOUTS.TWO_FA });
-            const token = new TOTP({ secret: TOTP_SECRET.replace(/\s/g, "") }).generate();
-            await codeInput.fill(token);
-            await page.getByRole('button', { name: 'Continue' }).click();
+            await submitTwoFactorCode(page);
         } catch (e) {
             await page.screenshot({ path: 'fatal_2fa_missing.png' });
-            throw new Error("2FA Input not found.");
+            throw new Error(`2FA step failed: ${e.message}`);
         }
 
         console.log("4. Authorizing...");
