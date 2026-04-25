@@ -7,7 +7,6 @@ workflow_file="$repo_dir/.github/workflows/main.yml"
 grep -Fq 'GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}' "$workflow_file"
 grep -Fq 'GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID }}' "$workflow_file"
 grep -Fq 'SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}' "$workflow_file"
-grep -Fq 'SCHWAB_PROXY_ENABLED: ${{ vars.SCHWAB_PROXY_ENABLED }}' "$workflow_file"
 grep -Fq 'GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}' "$workflow_file"
 grep -Fq 'SCHWAB_PROXY_URL: ${{ secrets.SCHWAB_PROXY_URL }}' "$workflow_file"
 grep -Fq 'SCHWAB_USERNAME: ${{ secrets.SCHWAB_USERNAME }}' "$workflow_file"
@@ -28,10 +27,5 @@ fi
 
 if grep -Fq 'secrets.SCHWAB_REDIRECT_URI' "$workflow_file"; then
   echo "workflow should not read SCHWAB_REDIRECT_URI from secrets anymore" >&2
-  exit 1
-fi
-
-if grep -Fq 'secrets.SCHWAB_PROXY_ENABLED' "$workflow_file"; then
-  echo "workflow should not read SCHWAB_PROXY_ENABLED from secrets" >&2
   exit 1
 fi
