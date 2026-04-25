@@ -20,6 +20,7 @@ assert.deepStrictEqual(
     buildPlaywrightProxy('http://user:pass@proxy.example.com:8080'),
     {
         server: 'http://proxy.example.com:8080',
+        bypass: 'localhost,127.0.0.1',
         username: 'user',
         password: 'pass',
     },
