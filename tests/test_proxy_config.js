@@ -1,4 +1,5 @@
 const assert = require('assert');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 const {
     buildAxiosProxyConfig,
@@ -26,20 +27,10 @@ assert.deepStrictEqual(
     },
 );
 
-assert.deepStrictEqual(
-    buildAxiosProxyConfig('https://user:pass@proxy.example.com'),
-    {
-        proxy: {
-            protocol: 'https',
-            host: 'proxy.example.com',
-            port: 443,
-            auth: {
-                username: 'user',
-                password: 'pass',
-            },
-        },
-    },
-);
+const axiosProxyConfig = buildAxiosProxyConfig('https://user:pass@proxy.example.com');
+assert.strictEqual(axiosProxyConfig.proxy, false);
+assert.ok(axiosProxyConfig.httpAgent instanceof HttpsProxyAgent);
+assert.ok(axiosProxyConfig.httpsAgent instanceof HttpsProxyAgent);
 
 assert.strictEqual(
     maskProxyForLogs('http://user:pass@proxy.example.com:8080'),

@@ -8,6 +8,7 @@
   "dependencies": {
     "@google-cloud/secret-manager": "^6.1.1",
     "axios": "^1.6.8",
+    "https-proxy-agent": "^9.0.0",
     "otpauth": "^9.2.2",
     "playwright": "^1.42.1",
     "playwright-extra": "^4.3.6",
