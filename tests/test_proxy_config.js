@@ -4,17 +4,27 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
     buildAxiosProxyConfig,
     buildPlaywrightProxy,
+    isProxyEnabled,
     maskProxyForLogs,
     resolveProxyUrl,
 } = require('../lib/proxy');
 
+assert.strictEqual(isProxyEnabled({}), false);
+assert.strictEqual(isProxyEnabled({ SCHWAB_PROXY_ENABLED: 'true' }), true);
+assert.strictEqual(isProxyEnabled({ SCHWAB_PROXY_ENABLED: '1' }), true);
+assert.strictEqual(isProxyEnabled({ SCHWAB_PROXY_ENABLED: 'false' }), false);
+
 assert.strictEqual(resolveProxyUrl({}), null);
 assert.strictEqual(
     resolveProxyUrl({
-        HTTPS_PROXY: 'http://fallback.example.com:3128',
+        SCHWAB_PROXY_ENABLED: 'true',
         SCHWAB_PROXY_URL: 'http://primary.example.com:8080',
     }),
     'http://primary.example.com:8080',
+);
+assert.throws(
+    () => resolveProxyUrl({ SCHWAB_PROXY_ENABLED: 'true' }),
+    /SCHWAB_PROXY_ENABLED is true but SCHWAB_PROXY_URL is not set/,
 );
 
 assert.deepStrictEqual(
