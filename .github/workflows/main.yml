@@ -33,6 +33,7 @@ jobs:
         run: npm start
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          SCHWAB_PROXY_URL: ${{ secrets.SCHWAB_PROXY_URL }}
           SCHWAB_USERNAME: ${{ secrets.SCHWAB_USERNAME }}
           SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}
           SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}

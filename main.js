@@ -6,6 +6,12 @@ const axios = require('axios');
 const { TOTP } = require('otpauth');
 const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
 const path = require('path');
+const {
+    buildAxiosProxyConfig,
+    buildPlaywrightProxy,
+    maskProxyForLogs,
+    resolveProxyUrl,
+} = require('./lib/proxy');
 
 // --- Configuration ---
 const USERNAME = process.env.SCHWAB_USERNAME;
@@ -16,6 +22,7 @@ const APP_SECRET = process.env.SCHWAB_APP_SECRET;
 const PROJECT_ID = process.env.GCP_PROJECT_ID;
 const SECRET_ID = process.env.GCP_SECRET_ID;
 const REDIRECT_URI = process.env.SCHWAB_REDIRECT_URI;
+const PROXY_URL = resolveProxyUrl(process.env);
 
 // --- Timing constants ---
 const TIMEOUTS = {
@@ -146,6 +153,7 @@ async function exchangeCodeForToken(code) {
         const response = await axios.post('https://api.schwabapi.com/v1/oauth/token', params.toString(), {
             headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/x-www-form-urlencoded' },
             timeout: 30000,
+            ...buildAxiosProxyConfig(PROXY_URL),
         });
         const data = response.data;
         if (!data.access_token || !data.refresh_token) {
@@ -163,6 +171,9 @@ async function exchangeCodeForToken(code) {
 async function main() {
     validateEnv();
     console.log("Starting Chrome OAuth task on GitHub Hosted Runner...");
+    if (PROXY_URL) {
+        console.log(`Using outbound proxy for Schwab traffic: ${maskProxyForLogs(PROXY_URL)}`);
+    }
     const authUrl = `https://api.schwabapi.com/v1/oauth/authorize?client_id=${APP_KEY}&redirect_uri=${REDIRECT_URI}`;
     const userDataDir = path.resolve(__dirname, 'schwab-local-session');
 
@@ -175,6 +186,7 @@ async function main() {
             `--window-size=${VIEWPORT.width},${VIEWPORT.height}`
         ],
         viewport: VIEWPORT,
+        ...(PROXY_URL ? { proxy: buildPlaywrightProxy(PROXY_URL) } : {}),
     });
 
     const page = context.pages()[0] || await context.newPage();
