@@ -12,6 +12,10 @@ const {
     maskProxyForLogs,
     resolveProxyUrl,
 } = require('./lib/proxy');
+const {
+    extractAuthorizationCodeFromUrl,
+    summarizeAuthorizationCode,
+} = require('./lib/oauth');
 
 // --- Configuration ---
 const USERNAME = process.env.SCHWAB_USERNAME;
@@ -149,6 +153,7 @@ async function updateAndCleanupSecrets(tokenData) {
 async function exchangeCodeForToken(code) {
     const credentials = Buffer.from(`${APP_KEY}:${APP_SECRET}`).toString('base64');
     const params = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI });
+    console.log(`Submitting token exchange with code summary: ${JSON.stringify(summarizeAuthorizationCode(code))}`);
     try {
         const response = await axios.post('https://api.schwabapi.com/v1/oauth/token', params.toString(), {
             headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -162,7 +167,20 @@ async function exchangeCodeForToken(code) {
         return data;
     } catch (err) {
         if (err.response) {
-            throw new Error(`Token exchange failed: ${err.response.status} ${JSON.stringify(err.response.data)}`);
+            const responseHeaders = err.response.headers || {};
+            const responseData = typeof err.response.data === 'string'
+                ? err.response.data
+                : JSON.stringify(err.response.data);
+            throw new Error(`Token exchange failed: ${err.response.status} ${JSON.stringify({
+                body: responseData.slice(0, 300),
+                bodyLength: responseData.length,
+                headers: {
+                    contentType: responseHeaders['content-type'] || null,
+                    proxyAgent: responseHeaders['proxy-agent'] || null,
+                    server: responseHeaders.server || null,
+                    via: responseHeaders.via || null,
+                },
+            })}`);
         }
         throw new Error(`Token exchange network error: ${err.message}`);
     }
@@ -193,7 +211,19 @@ async function main() {
     let interceptedCode = null;
 
     page.on('request', r => {
-        if (r.url().includes('code=')) interceptedCode = new URL(r.url()).searchParams.get('code');
+        const requestUrl = r.url();
+        const extractedCode = extractAuthorizationCodeFromUrl(requestUrl);
+        if (!extractedCode) {
+            return;
+        }
+
+        interceptedCode = extractedCode;
+        const parsedUrl = new URL(requestUrl);
+        console.log(`Captured redirect request: ${JSON.stringify({
+            origin: parsedUrl.origin,
+            path: parsedUrl.pathname,
+            code: summarizeAuthorizationCode(extractedCode),
+        })}`);
     });
 
     try {
@@ -237,7 +267,7 @@ async function main() {
         }
         if (!interceptedCode) throw new Error("Code interception failed after polling.");
 
-        const tokenDict = await exchangeCodeForToken(interceptedCode.replace('%40', '@'));
+        const tokenDict = await exchangeCodeForToken(interceptedCode);
         tokenDict.expires_at = Math.floor(Date.now() / 1000) + tokenDict.expires_in;
         await updateAndCleanupSecrets({ creation_timestamp: Math.floor(Date.now() / 1000), token: tokenDict });
         console.log("SUCCESS! Token refreshed and synced.");
