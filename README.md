@@ -30,6 +30,7 @@ Go to **Settings > Secrets and variables > Actions** in your repo and add:
 | `SCHWAB_API_KEY` | Your Schwab Developer App Client ID |
 | `SCHWAB_APP_SECRET` | Your Schwab Developer App Client Secret |
 | `GCP_SA_KEY` | JSON key for a GCP Service Account with Secret Manager permissions |
+| `SCHWAB_PROXY_URL` | Optional authenticated HTTP/HTTPS proxy URL for routing Schwab browser/API traffic through your home/residential exit, e.g. `http://user:pass@proxy.example.com:3128` |
 
 These values are better stored as **GitHub Variables** because they are configuration, not credentials:
 
@@ -44,6 +45,38 @@ These values are better stored as **GitHub Variables** because they are configur
 2. Select **Schwab Token Auto Refresher** from the left sidebar.
 3. Click **Enable workflow** (GitHub disables scheduled workflows on forks by default).
 4. (Optional) Manually trigger the flow using **Run workflow** to verify the configuration.
+
+### 3. Optional: Route Schwab traffic through your router/home exit IP
+
+If Schwab is more reliable from your residential network than from GitHub-hosted IP ranges, this repo can route the **Schwab browser flow + token exchange request** through an authenticated proxy by setting `SCHWAB_PROXY_URL`.
+
+This behavior is **default-off**:
+
+- if `SCHWAB_PROXY_URL` is not configured, the workflow does **not** use a proxy
+- if `SCHWAB_PROXY_URL` is configured, the workflow uses that proxy for Schwab traffic
+
+Important boundary:
+
+- Your **router public IP is not a proxy by itself**.
+- Do **not** expose the OpenWrt/LuCI admin UI to the public internet.
+- You need a separate **HTTP/HTTPS proxy service** reachable from GitHub Actions, then point `SCHWAB_PROXY_URL` at that endpoint.
+
+Typical setup options:
+
+1. Run a small authenticated proxy inside your home network (for example on the router or a LAN machine).
+2. Expose only that proxy through your preferred tunnel/reverse-proxy setup.
+3. Store the final public endpoint in `SCHWAB_PROXY_URL`, for example:
+
+   ```text
+   SCHWAB_PROXY_URL=http://user:pass@proxy.example.com:3128
+   ```
+
+Notes:
+
+- This repo currently supports **HTTP/HTTPS proxy URLs** for workflow mode.
+- If `SCHWAB_PROXY_URL` is absent, the workflow runs without the home-exit proxy.
+- Only the Schwab automation traffic is proxied. Package installation and GitHub/GCP housekeeping continue to use the runner's default egress.
+- If you want every step to originate from home, a **self-hosted runner in your LAN** is usually simpler and more stable than tunneling a proxy into a GitHub-hosted runner.
 
 ## 📈 Architecture
 
