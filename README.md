@@ -76,6 +76,14 @@ Notes:
 - This repo currently supports **HTTP/HTTPS proxy URLs** for workflow mode.
 - If `SCHWAB_PROXY_URL` is absent, the workflow runs without the home-exit proxy.
 - Only the Schwab automation traffic is proxied. Package installation and GitHub/GCP housekeeping continue to use the runner's default egress.
+- If a VPS or tunnel is used as the public entrypoint, make sure its upstream proxy still exits through the intended home/router WAN address. A reachable proxy endpoint is not enough if the final upstream route falls back to a VPS, VPN, or WireGuard egress IP.
+- A safe connectivity probe is:
+
+  ```bash
+  curl --proxy "$SCHWAB_PROXY_URL" https://api.schwabapi.com/v1/oauth/authorize
+  ```
+
+  A bare authorize request should reach Schwab and return an OAuth/client error, not a tunnel failure. If Schwab's login page reports invalid credentials while the same credentials work manually, verify the proxy's final exit IP before changing secrets.
 - If you want every step to originate from home, a **self-hosted runner in your LAN** is usually simpler and more stable than tunneling a proxy into a GitHub-hosted runner.
 
 ## 📈 Architecture
