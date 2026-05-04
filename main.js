@@ -31,6 +31,7 @@ const PROXY_URL = resolveProxyUrl(process.env);
 // --- Timing constants ---
 const TIMEOUTS = {
     AUTH_PAGE: 60000,
+    LOGIN_FORM: 30000,
     TWO_FA: 20000,
     BUTTON_CLICK: 10000,
     CHECKBOX: 5000,
@@ -46,6 +47,7 @@ const VIEWPORT = { width: 1280, height: 800 };
 const TOTP_PERIOD_SECONDS = 30;
 const TOTP_MIN_VALIDITY_SECONDS = 20;
 const TWO_FA_MAX_ATTEMPTS = 2;
+const AUTH_NAVIGATION_MAX_ATTEMPTS = 3;
 
 // --- Helpers ---
 const humanDelay = (min = 2000, max = 5000) =>
@@ -96,6 +98,37 @@ async function waitForFreshTotpWindow(minRemainingSeconds = TOTP_MIN_VALIDITY_SE
         console.log(`Waiting ${waitMs}ms for a fresh TOTP window...`);
         await humanDelay(waitMs, waitMs + 250);
     }
+}
+
+async function navigateToLoginForm(page, authUrl) {
+    const loginInput = page.getByRole('textbox', { name: /Login ID/i });
+    const passwordInput = page.getByRole('textbox', { name: /Password/i });
+
+    for (let attempt = 1; attempt <= AUTH_NAVIGATION_MAX_ATTEMPTS; attempt += 1) {
+        console.log(`1. Navigating to auth page, attempt ${attempt}/${AUTH_NAVIGATION_MAX_ATTEMPTS}...`);
+        await page.goto(authUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.AUTH_PAGE });
+        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+        await humanDelay(DELAYS.CREDENTIAL_ENTRY.min, DELAYS.CREDENTIAL_ENTRY.max);
+
+        try {
+            await loginInput.waitFor({ state: 'visible', timeout: TIMEOUTS.LOGIN_FORM });
+            await passwordInput.waitFor({ state: 'visible', timeout: TIMEOUTS.LOGIN_FORM });
+            return { loginInput, passwordInput };
+        } catch (e) {
+            const title = await page.title().catch(() => '');
+            console.log(`Login form was not visible on attempt ${attempt}/${AUTH_NAVIGATION_MAX_ATTEMPTS}.`);
+            console.log(`Current auth page state: ${JSON.stringify({ url: page.url(), title: title || null })}`);
+            await page.screenshot({ path: `auth_page_attempt_${attempt}.png` }).catch(() => {});
+
+            if (attempt === AUTH_NAVIGATION_MAX_ATTEMPTS) {
+                throw new Error(`Login form did not become visible after ${AUTH_NAVIGATION_MAX_ATTEMPTS} attempts: ${e.message}`);
+            }
+
+            await humanDelay(4000, 7000);
+        }
+    }
+
+    throw new Error('Login form navigation attempts were exhausted.');
 }
 
 async function submitTwoFactorCode(page) {
@@ -227,12 +260,10 @@ async function main() {
     });
 
     try {
-        console.log("1. Navigating to auth page...");
-        await page.goto(authUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.AUTH_PAGE });
-        await humanDelay(DELAYS.CREDENTIAL_ENTRY.min, DELAYS.CREDENTIAL_ENTRY.max);
+        const { loginInput, passwordInput } = await navigateToLoginForm(page, authUrl);
         console.log("2. Entering credentials...");
-        await page.getByRole('textbox', { name: 'Login ID' }).fill(USERNAME);
-        await page.getByRole('textbox', { name: 'Password' }).fill(PASSWORD);
+        await loginInput.fill(USERNAME);
+        await passwordInput.fill(PASSWORD);
         await page.getByRole('button', { name: 'Log in' }).click();
 
         console.log("3. Processing 2FA code...");
