@@ -32,7 +32,8 @@ const PROXY_URL = resolveProxyUrl(process.env);
 const TIMEOUTS = {
     AUTH_PAGE: 60000,
     LOGIN_FORM: 30000,
-    TWO_FA: 20000,
+    TWO_FA: 30000,
+    SCREENSHOT: 10000,
     BUTTON_CLICK: 10000,
     CHECKBOX: 5000,
     CODE_POLL_INTERVAL: 1000,
@@ -52,6 +53,27 @@ const AUTH_NAVIGATION_MAX_ATTEMPTS = 3;
 // --- Helpers ---
 const humanDelay = (min = 2000, max = 5000) =>
     new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min) + min)));
+
+function summarizeUrl(value) {
+    try {
+        const url = new URL(value);
+        return `${url.origin}${url.pathname}`;
+    } catch (e) {
+        return String(value).slice(0, 160);
+    }
+}
+
+function sanitizeError(value) {
+    return String(value ?? '').replace(/https?:\/\/[^\s"')]+/g, match => summarizeUrl(match));
+}
+
+async function saveScreenshot(page, filename) {
+    try {
+        await page.screenshot({ path: filename, timeout: TIMEOUTS.SCREENSHOT });
+    } catch (error) {
+        console.log(`Could not capture screenshot ${filename}: ${sanitizeError(error.message)}`);
+    }
+}
 
 function validateEnv() {
     const required = [
@@ -117,11 +139,11 @@ async function navigateToLoginForm(page, authUrl) {
         } catch (e) {
             const title = await page.title().catch(() => '');
             console.log(`Login form was not visible on attempt ${attempt}/${AUTH_NAVIGATION_MAX_ATTEMPTS}.`);
-            console.log(`Current auth page state: ${JSON.stringify({ url: page.url(), title: title || null })}`);
-            await page.screenshot({ path: `auth_page_attempt_${attempt}.png` }).catch(() => {});
+            console.log(`Current auth page state: ${JSON.stringify({ url: summarizeUrl(page.url()), title: title || null })}`);
+            await saveScreenshot(page, `auth_page_attempt_${attempt}.png`);
 
             if (attempt === AUTH_NAVIGATION_MAX_ATTEMPTS) {
-                throw new Error(`Login form did not become visible after ${AUTH_NAVIGATION_MAX_ATTEMPTS} attempts: ${e.message}`);
+                throw new Error(`Login form did not become visible after ${AUTH_NAVIGATION_MAX_ATTEMPTS} attempts: ${sanitizeError(e.message)}`);
             }
 
             await humanDelay(4000, 7000);
@@ -270,8 +292,8 @@ async function main() {
         try {
             await submitTwoFactorCode(page);
         } catch (e) {
-            await page.screenshot({ path: 'fatal_2fa_missing.png' });
-            throw new Error(`2FA step failed: ${e.message}`);
+            await saveScreenshot(page, 'fatal_2fa_missing.png');
+            throw new Error(`2FA step failed: ${sanitizeError(e.message)}`);
         }
 
         console.log("4. Authorizing...");
@@ -304,9 +326,9 @@ async function main() {
         console.log("SUCCESS! Token refreshed and synced.");
 
     } catch (err) {
-        console.error("Failure:", err.message);
-        if (err.stack) console.error("Stack:", err.stack);
-        await page.screenshot({ path: 'last_error_state.png' });
+        console.error("Failure:", sanitizeError(err.message));
+        if (err.stack) console.error("Stack:", sanitizeError(err.stack));
+        await saveScreenshot(page, 'last_error_state.png');
         process.exit(1);
     } finally {
         await context.close();
