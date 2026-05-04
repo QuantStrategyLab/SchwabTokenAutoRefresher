@@ -32,7 +32,8 @@ const PROXY_URL = resolveProxyUrl(process.env);
 const TIMEOUTS = {
     AUTH_PAGE: 60000,
     LOGIN_FORM: 30000,
-    TWO_FA: 20000,
+    TWO_FA: 45000,
+    SCREENSHOT: 10000,
     BUTTON_CLICK: 10000,
     CHECKBOX: 5000,
     CODE_POLL_INTERVAL: 1000,
@@ -48,10 +49,74 @@ const TOTP_PERIOD_SECONDS = 30;
 const TOTP_MIN_VALIDITY_SECONDS = 20;
 const TWO_FA_MAX_ATTEMPTS = 2;
 const AUTH_NAVIGATION_MAX_ATTEMPTS = 3;
+const MAX_DIAGNOSTIC_EVENTS = 30;
 
 // --- Helpers ---
 const humanDelay = (min = 2000, max = 5000) =>
     new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min) + min)));
+
+function summarizeUrl(value) {
+    try {
+        const url = new URL(value);
+        const pathParts = url.pathname.split('/').filter(Boolean);
+        const safePath = pathParts.length > 3 ? `/${pathParts.slice(0, 3).join('/')}/...` : url.pathname;
+        return `${url.origin}${safePath}`;
+    } catch (e) {
+        return String(value).slice(0, 160);
+    }
+}
+
+function attachBrowserDiagnostics(page) {
+    const counts = { console: 0, pageerror: 0, requestfailed: 0, response: 0 };
+
+    page.on('console', msg => {
+        if (!['error', 'warning'].includes(msg.type()) || counts.console >= MAX_DIAGNOSTIC_EVENTS) {
+            return;
+        }
+        counts.console += 1;
+        console.log(`Browser console ${msg.type()}: ${msg.text().slice(0, 500)}`);
+    });
+
+    page.on('pageerror', error => {
+        if (counts.pageerror >= MAX_DIAGNOSTIC_EVENTS) {
+            return;
+        }
+        counts.pageerror += 1;
+        console.log(`Browser page error: ${error.message.slice(0, 500)}`);
+    });
+
+    page.on('requestfailed', request => {
+        if (counts.requestfailed >= MAX_DIAGNOSTIC_EVENTS) {
+            return;
+        }
+        counts.requestfailed += 1;
+        console.log(`Browser request failed: ${JSON.stringify({
+            type: request.resourceType(),
+            url: summarizeUrl(request.url()),
+            failure: request.failure()?.errorText || null,
+        })}`);
+    });
+
+    page.on('response', response => {
+        const status = response.status();
+        if (status < 400 || counts.response >= MAX_DIAGNOSTIC_EVENTS) {
+            return;
+        }
+        counts.response += 1;
+        console.log(`Browser HTTP ${status}: ${JSON.stringify({
+            type: response.request().resourceType(),
+            url: summarizeUrl(response.url()),
+        })}`);
+    });
+}
+
+async function saveScreenshot(page, filename) {
+    try {
+        await page.screenshot({ path: filename, timeout: TIMEOUTS.SCREENSHOT });
+    } catch (error) {
+        console.log(`Could not capture screenshot ${filename}: ${error.message}`);
+    }
+}
 
 function validateEnv() {
     const required = [
@@ -100,11 +165,61 @@ async function waitForFreshTotpWindow(minRemainingSeconds = TOTP_MIN_VALIDITY_SE
     }
 }
 
+async function collectPageDiagnostics(page) {
+    return page.evaluate(() => {
+        const redactUrl = value => {
+            try {
+                const url = new URL(value);
+                const pathParts = url.pathname.split('/').filter(Boolean);
+                const safePath = pathParts.length > 3 ? `/${pathParts.slice(0, 3).join('/')}/...` : url.pathname;
+                return `${url.origin}${safePath}`;
+            } catch (e) {
+                return String(value).slice(0, 160);
+            }
+        };
+
+        return {
+            readyState: document.readyState,
+            url: redactUrl(window.location.href),
+            title: document.title || null,
+            bodyTextLength: document.body?.innerText?.length || 0,
+            bodyTextSample: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 200),
+            inputs: Array.from(document.querySelectorAll('input')).slice(0, 10).map(input => ({
+                type: input.type || null,
+                id: input.id || null,
+                name: input.name || null,
+                ariaLabel: input.getAttribute('aria-label'),
+                placeholder: input.getAttribute('placeholder'),
+            })),
+            buttons: Array.from(document.querySelectorAll('button')).slice(0, 10).map(button => ({
+                id: button.id || null,
+                text: (button.innerText || button.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+                ariaLabel: button.getAttribute('aria-label'),
+            })),
+            scripts: Array.from(document.scripts).slice(0, 15).map(script => redactUrl(script.src || 'inline')),
+            iframes: Array.from(document.querySelectorAll('iframe')).slice(0, 10).map(frame => ({
+                src: redactUrl(frame.src || ''),
+                title: frame.title || null,
+            })),
+            resources: performance.getEntriesByType('resource').slice(-25).map(entry => ({
+                type: entry.initiatorType,
+                name: redactUrl(entry.name),
+                transferSize: entry.transferSize,
+                duration: Math.round(entry.duration),
+            })),
+        };
+    }).catch(error => ({ error: error.message }));
+}
+
 async function navigateToLoginForm(page, authUrl) {
     const loginInput = page.getByRole('textbox', { name: /Login ID/i });
     const passwordInput = page.getByRole('textbox', { name: /Password/i });
 
     for (let attempt = 1; attempt <= AUTH_NAVIGATION_MAX_ATTEMPTS; attempt += 1) {
+        if (attempt > 1) {
+            await page.context().clearCookies().catch(() => {});
+            await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+        }
         console.log(`1. Navigating to auth page, attempt ${attempt}/${AUTH_NAVIGATION_MAX_ATTEMPTS}...`);
         await page.goto(authUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.AUTH_PAGE });
         await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
@@ -118,7 +233,8 @@ async function navigateToLoginForm(page, authUrl) {
             const title = await page.title().catch(() => '');
             console.log(`Login form was not visible on attempt ${attempt}/${AUTH_NAVIGATION_MAX_ATTEMPTS}.`);
             console.log(`Current auth page state: ${JSON.stringify({ url: page.url(), title: title || null })}`);
-            await page.screenshot({ path: `auth_page_attempt_${attempt}.png` }).catch(() => {});
+            console.log(`Auth page diagnostics: ${JSON.stringify(await collectPageDiagnostics(page))}`);
+            await saveScreenshot(page, `auth_page_attempt_${attempt}.png`);
 
             if (attempt === AUTH_NAVIGATION_MAX_ATTEMPTS) {
                 throw new Error(`Login form did not become visible after ${AUTH_NAVIGATION_MAX_ATTEMPTS} attempts: ${e.message}`);
@@ -233,6 +349,8 @@ async function main() {
         headless: false,
         args: [
             '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
             '--disable-blink-features=AutomationControlled',
             `--window-size=${VIEWPORT.width},${VIEWPORT.height}`
         ],
@@ -241,6 +359,7 @@ async function main() {
     });
 
     const page = context.pages()[0] || await context.newPage();
+    attachBrowserDiagnostics(page);
     let interceptedCode = null;
 
     page.on('request', r => {
@@ -270,7 +389,8 @@ async function main() {
         try {
             await submitTwoFactorCode(page);
         } catch (e) {
-            await page.screenshot({ path: 'fatal_2fa_missing.png' });
+            console.log(`2FA page diagnostics: ${JSON.stringify(await collectPageDiagnostics(page))}`);
+            await saveScreenshot(page, 'fatal_2fa_missing.png');
             throw new Error(`2FA step failed: ${e.message}`);
         }
 
@@ -306,7 +426,7 @@ async function main() {
     } catch (err) {
         console.error("Failure:", err.message);
         if (err.stack) console.error("Stack:", err.stack);
-        await page.screenshot({ path: 'last_error_state.png' });
+        await saveScreenshot(page, 'last_error_state.png');
         process.exit(1);
     } finally {
         await context.close();
