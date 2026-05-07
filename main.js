@@ -281,11 +281,40 @@ async function navigateToLoginForm(page, authUrl) {
     throw new Error('Login form navigation attempts were exhausted.');
 }
 
-async function submitTwoFactorCode(page) {
-    const codeInput = page.getByRole('spinbutton', { name: 'Security Code' });
-    await codeInput.waitFor({ timeout: TIMEOUTS.TWO_FA });
+async function waitForFirstVisible(candidates, timeout, description) {
+    const deadline = Date.now() + timeout;
+    let lastError = null;
 
-    const continueButton = page.getByRole('button', { name: 'Continue' });
+    while (Date.now() < deadline) {
+        for (const { label, locator } of candidates) {
+            const remaining = Math.max(250, deadline - Date.now());
+            try {
+                const target = locator.first();
+                await target.waitFor({ state: 'visible', timeout: Math.min(1000, remaining) });
+                console.log(`Found ${description} using ${label}.`);
+                return target;
+            } catch (error) {
+                lastError = error;
+            }
+        }
+    }
+
+    throw new Error(`${description} was not visible after ${timeout}ms: ${sanitizeError(lastError?.message || 'no matching locator')}`);
+}
+
+async function submitTwoFactorCode(page) {
+    const codeInput = await waitForFirstVisible([
+        { label: 'accessible Security Code spinbutton', locator: page.getByRole('spinbutton', { name: 'Security Code' }) },
+        { label: '#placeholderCode', locator: page.locator('#placeholderCode') },
+        { label: 'numeric input fallback', locator: page.locator('input[type="number"], input[inputmode="numeric"]') },
+    ], TIMEOUTS.TWO_FA, '2FA security code input');
+
+    const continueButton = await waitForFirstVisible([
+        { label: 'accessible Continue button', locator: page.getByRole('button', { name: 'Continue' }) },
+        { label: '#continueButton', locator: page.locator('#continueButton') },
+        { label: 'submit button fallback', locator: page.locator('button[type="submit"]') },
+    ], TIMEOUTS.BUTTON_CLICK, '2FA continue button');
+
     const totp = new TOTP({ secret: TOTP_SECRET.replace(/\s/g, "") });
 
     for (let attempt = 1; attempt <= TWO_FA_MAX_ATTEMPTS; attempt += 1) {

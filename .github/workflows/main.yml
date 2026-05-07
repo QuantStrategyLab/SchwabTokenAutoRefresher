@@ -53,7 +53,7 @@ jobs:
           name: debug-screenshots
           path: |
             *.png
-            *.json
+            *_diagnostics.json
           retention-days: 3
 
       - name: Update Log (Bash Version)
