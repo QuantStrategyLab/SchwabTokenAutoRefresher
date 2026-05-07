@@ -17,6 +17,9 @@ grep -Fq 'contents: write' "$workflow_file"
 grep -Fq 'CHROME_VERSION="147.0.7727.137-1"' "$workflow_file"
 grep -Fq 'https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/${CHROME_DEB}' "$workflow_file"
 grep -Eq "channel: ['\"]chrome['\"]" "$repo_dir/main.js"
+grep -Fq 'PW_TEST_SCREENSHOT_NO_FONTS_READY' "$repo_dir/main.js"
+grep -Fq '            *.png' "$workflow_file"
+grep -Fq '            *.json' "$workflow_file"
 
 if grep -Fq 'google-chrome-stable_current_amd64.deb' "$workflow_file"; then
   echo "workflow should not install floating Google Chrome stable anymore" >&2

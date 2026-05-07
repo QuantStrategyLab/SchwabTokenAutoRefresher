@@ -126,10 +126,11 @@ function attachPageDiagnostics(page) {
 
     page.on('requestfailed', request => {
         const requestUrl = request.url();
-        if (!isSchwabUrl(requestUrl)) {
+        if (requestUrl.startsWith('data:') || requestUrl.startsWith('blob:')) {
             return;
         }
-        logNetworkEvent(`Schwab request failed: ${JSON.stringify({
+        logNetworkEvent(`Browser request failed: ${JSON.stringify({
+            scope: isSchwabUrl(requestUrl) ? 'schwab' : 'third_party',
             method: request.method(),
             url: summarizeUrl(requestUrl),
             failure: sanitizeLogValue(request.failure()?.errorText || 'unknown', 240),
@@ -139,10 +140,11 @@ function attachPageDiagnostics(page) {
     page.on('response', response => {
         const responseUrl = response.url();
         const status = response.status();
-        if (!isSchwabUrl(responseUrl) || status < 400) {
+        if (responseUrl.startsWith('data:') || responseUrl.startsWith('blob:') || status < 400) {
             return;
         }
-        logNetworkEvent(`Schwab response ${status}: ${JSON.stringify({
+        logNetworkEvent(`Browser response ${status}: ${JSON.stringify({
+            scope: isSchwabUrl(responseUrl) ? 'schwab' : 'third_party',
             url: summarizeUrl(responseUrl),
             statusText: sanitizeLogValue(response.statusText(), 160),
         })}`);
@@ -194,6 +196,7 @@ async function collectPageDiagnostics(page, filename) {
 
 async function saveScreenshot(page, filename) {
     try {
+        process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY = '1';
         await page.screenshot({ path: filename, timeout: TIMEOUTS.SCREENSHOT });
     } catch (error) {
         console.log(`Could not capture screenshot ${filename}: ${sanitizeError(error.message)}`);
