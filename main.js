@@ -6,6 +6,7 @@ const axios = require('axios');
 const { TOTP } = require('otpauth');
 const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
 const path = require('path');
+const fs = require('fs');
 const {
     buildAxiosProxyConfig,
     buildPlaywrightProxy,
@@ -65,6 +66,130 @@ function summarizeUrl(value) {
 
 function sanitizeError(value) {
     return String(value ?? '').replace(/https?:\/\/[^\s"')]+/g, match => summarizeUrl(match));
+}
+
+function redactKnownSecrets(value) {
+    const secrets = [USERNAME, PASSWORD, TOTP_SECRET, APP_KEY, APP_SECRET]
+        .filter(secret => typeof secret === 'string' && secret.length >= 4)
+        .sort((a, b) => b.length - a.length);
+
+    let output = String(value ?? '');
+    secrets.forEach((secret, index) => {
+        output = output.split(secret).join(`[REDACTED_${index + 1}]`);
+    });
+    return output;
+}
+
+function sanitizeLogValue(value, maxLength = 1000) {
+    return redactKnownSecrets(sanitizeError(value))
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, maxLength);
+}
+
+function isSchwabUrl(value) {
+    try {
+        const { hostname } = new URL(value);
+        const host = hostname.toLowerCase();
+        return host === 'schwab.com' ||
+            host.endsWith('.schwab.com') ||
+            host === 'schwabapi.com' ||
+            host.endsWith('.schwabapi.com');
+    } catch (e) {
+        return false;
+    }
+}
+
+function attachPageDiagnostics(page) {
+    let networkLogCount = 0;
+    const maxNetworkLogs = 80;
+    const logNetworkEvent = message => {
+        if (networkLogCount < maxNetworkLogs) {
+            console.log(message);
+        } else if (networkLogCount === maxNetworkLogs) {
+            console.log('Further Schwab network diagnostic events suppressed.');
+        }
+        networkLogCount += 1;
+    };
+
+    page.on('console', msg => {
+        const type = msg.type();
+        if (type !== 'error' && type !== 'warning') {
+            return;
+        }
+        console.log(`Browser console ${type}: ${sanitizeLogValue(msg.text())}`);
+    });
+
+    page.on('pageerror', error => {
+        console.log(`Browser page error: ${sanitizeLogValue(error.message)}`);
+    });
+
+    page.on('requestfailed', request => {
+        const requestUrl = request.url();
+        if (!isSchwabUrl(requestUrl)) {
+            return;
+        }
+        logNetworkEvent(`Schwab request failed: ${JSON.stringify({
+            method: request.method(),
+            url: summarizeUrl(requestUrl),
+            failure: sanitizeLogValue(request.failure()?.errorText || 'unknown', 240),
+        })}`);
+    });
+
+    page.on('response', response => {
+        const responseUrl = response.url();
+        const status = response.status();
+        if (!isSchwabUrl(responseUrl) || status < 400) {
+            return;
+        }
+        logNetworkEvent(`Schwab response ${status}: ${JSON.stringify({
+            url: summarizeUrl(responseUrl),
+            statusText: sanitizeLogValue(response.statusText(), 160),
+        })}`);
+    });
+}
+
+async function collectPageDiagnostics(page, filename) {
+    const title = await page.title().catch(() => '');
+    const bodyText = await page.locator('body').innerText({ timeout: 1500 }).catch(error => `body text unavailable: ${error.message}`);
+    const inputs = await page.locator('input').evaluateAll(elements => elements.slice(0, 40).map(element => ({
+        type: element.getAttribute('type') || null,
+        id: element.id || null,
+        name: element.getAttribute('name') || null,
+        ariaLabel: element.getAttribute('aria-label') || null,
+        placeholder: element.getAttribute('placeholder') || null,
+        disabled: element.disabled,
+        visibleValueLength: element.value ? element.value.length : 0,
+    }))).catch(error => [{ error: error.message }]);
+    const buttons = await page.locator('button').evaluateAll(elements => elements.slice(0, 40).map(element => ({
+        id: element.id || null,
+        name: element.getAttribute('name') || null,
+        ariaLabel: element.getAttribute('aria-label') || null,
+        text: (element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+        disabled: element.disabled,
+    }))).catch(error => [{ error: error.message }]);
+    const diagnostics = {
+        url: summarizeUrl(page.url()),
+        title: sanitizeLogValue(title, 240),
+        frames: page.frames().map(frame => ({
+            name: sanitizeLogValue(frame.name() || '', 120) || null,
+            url: summarizeUrl(frame.url()),
+        })).slice(0, 20),
+        bodyTextLength: String(bodyText ?? '').length,
+        bodyTextPreview: sanitizeLogValue(bodyText, 1200),
+        inputs: JSON.parse(redactKnownSecrets(JSON.stringify(inputs))),
+        buttons: JSON.parse(redactKnownSecrets(JSON.stringify(buttons))),
+    };
+
+    fs.writeFileSync(filename, `${JSON.stringify(diagnostics, null, 2)}\n`);
+    console.log(`Saved page diagnostics: ${JSON.stringify({
+        file: filename,
+        url: diagnostics.url,
+        title: diagnostics.title || null,
+        frameCount: diagnostics.frames.length,
+        bodyTextLength: diagnostics.bodyTextLength,
+        bodyTextPreview: diagnostics.bodyTextPreview.slice(0, 240),
+    })}`);
 }
 
 async function saveScreenshot(page, filename) {
@@ -263,6 +388,7 @@ async function main() {
     });
 
     const page = context.pages()[0] || await context.newPage();
+    attachPageDiagnostics(page);
     let interceptedCode = null;
 
     page.on('request', r => {
@@ -293,6 +419,7 @@ async function main() {
             await submitTwoFactorCode(page);
         } catch (e) {
             await saveScreenshot(page, 'fatal_2fa_missing.png');
+            await collectPageDiagnostics(page, 'fatal_2fa_missing_diagnostics.json');
             throw new Error(`2FA step failed: ${sanitizeError(e.message)}`);
         }
 

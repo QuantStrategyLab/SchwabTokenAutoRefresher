@@ -51,7 +51,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: debug-screenshots
-          path: '*.png'
+          path: |
+            '*.png'
+            '*.json'
           retention-days: 3
 
       - name: Update Log (Bash Version)
