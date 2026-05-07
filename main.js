@@ -251,7 +251,6 @@ async function main() {
     const userDataDir = path.resolve(__dirname, 'schwab-local-session');
 
     const context = await chromium.launchPersistentContext(userDataDir, {
-        channel: 'chrome',
         headless: false,
         args: [
             '--no-sandbox',

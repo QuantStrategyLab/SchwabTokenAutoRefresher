@@ -14,6 +14,17 @@ grep -Fq 'SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}' "$workflow_file"
 grep -Fq 'SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}' "$workflow_file"
 grep -Fq 'permissions:' "$workflow_file"
 grep -Fq 'contents: write' "$workflow_file"
+grep -Fq 'npx playwright install --with-deps chromium' "$workflow_file"
+
+if grep -Fq 'google-chrome-stable_current_amd64.deb' "$workflow_file"; then
+  echo "workflow should not install floating Google Chrome stable anymore" >&2
+  exit 1
+fi
+
+if grep -Eq "channel: ['\"]chrome['\"]" "$repo_dir/main.js"; then
+  echo "main.js should use Playwright-managed Chromium instead of floating Chrome channel" >&2
+  exit 1
+fi
 
 if grep -Fq 'secrets.GCP_PROJECT_ID' "$workflow_file"; then
   echo "workflow should not read GCP_PROJECT_ID from secrets anymore" >&2
