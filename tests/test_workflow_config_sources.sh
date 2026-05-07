@@ -14,15 +14,17 @@ grep -Fq 'SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}' "$workflow_file"
 grep -Fq 'SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}' "$workflow_file"
 grep -Fq 'permissions:' "$workflow_file"
 grep -Fq 'contents: write' "$workflow_file"
-grep -Fq 'npx playwright install --with-deps chromium' "$workflow_file"
+grep -Fq 'CHROME_VERSION="147.0.7727.137-1"' "$workflow_file"
+grep -Fq 'https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/${CHROME_DEB}' "$workflow_file"
+grep -Eq "channel: ['\"]chrome['\"]" "$repo_dir/main.js"
 
 if grep -Fq 'google-chrome-stable_current_amd64.deb' "$workflow_file"; then
   echo "workflow should not install floating Google Chrome stable anymore" >&2
   exit 1
 fi
 
-if grep -Eq "channel: ['\"]chrome['\"]" "$repo_dir/main.js"; then
-  echo "main.js should use Playwright-managed Chromium instead of floating Chrome channel" >&2
+if grep -Fq 'npx playwright install --with-deps chromium' "$workflow_file"; then
+  echo "workflow should install pinned Google Chrome instead of Playwright Chromium for Schwab compatibility" >&2
   exit 1
 fi
 
