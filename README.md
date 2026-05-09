@@ -17,7 +17,7 @@ An automated utility designed to bypass the 7-day expiration of Charles Schwab A
 
 ## 🛠 Setup & Installation
 
-If you have forked this repository, follow these steps to enable the automation:
+If you installed this repository as a fork, follow these steps to enable the automation:
 
 ### 1. Configure GitHub Secrets
 Go to **Settings > Secrets and variables > Actions** in your repo and add:
