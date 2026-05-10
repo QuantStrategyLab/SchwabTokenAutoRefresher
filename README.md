@@ -1,5 +1,12 @@
 # Schwab Token Auto Refresher
 
+[English](#english) | [中文](#中文)
+
+---
+
+<a id="english"></a>
+## English
+
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20.x-green.svg)](https://nodejs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-Stealth-orange.svg)](https://playwright.dev/)
@@ -88,3 +95,71 @@ Notes:
 
 ## 📄 License
 Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+<a id="中文"></a>
+## 中文
+
+用于自动刷新 Charles Schwab API refresh token 的工具。它在 GitHub-hosted runner（`ubuntu-latest`）上运行官方 Google Chrome，自动完成 OAuth consent flow，并把刷新后的凭据同步到 Google Cloud Secret Manager。
+
+## 功能
+
+- **GitHub-hosted 运行**：直接使用 GitHub runner，不需要维护私有 VPS。
+- **官方 Chrome**：动态安装 retail Google Chrome `.deb`，提高浏览器兼容性。
+- **Stealth 自动化**：通过 `playwright-extra` 和 stealth 插件模拟正常浏览器行为。
+- **虚拟显示**：在 CI 中使用 `xvfb-run` 支持 headed browser 交互。
+- **安全同步**：刷新后的 token 直接写入 Google Cloud Secret Manager，不写入仓库。
+- **隔离日志**：成功时间戳提交到独立 `logs` 分支，避免污染主分支历史。
+
+## 设置
+
+如果你 fork 了这个仓库，需要在 **Settings > Secrets and variables > Actions** 中配置：
+
+| Secret Name | 说明 |
+| :--- | :--- |
+| `SCHWAB_USERNAME` | Schwab 登录 ID |
+| `SCHWAB_PASSWORD` | Schwab 登录密码 |
+| `SCHWAB_TOTP_SECRET` | 2FA/MFA Base32 secret |
+| `SCHWAB_API_KEY` | Schwab Developer App Client ID |
+| `SCHWAB_APP_SECRET` | Schwab Developer App Client Secret |
+| `GCP_SA_KEY` | 具备 Secret Manager 权限的 GCP Service Account JSON key |
+| `SCHWAB_PROXY_URL` | 可选的认证 HTTP/HTTPS 代理 URL，用于让 Schwab 浏览器/API 流量走住宅或家庭出口 |
+
+这些值属于配置而非凭据，更适合放在 **GitHub Variables**：
+
+| Variable Name | 说明 |
+| :--- | :--- |
+| `GCP_PROJECT_ID` | Google Cloud Project ID |
+| `GCP_SECRET_ID` | Secret Manager 中的 secret 名称 |
+| `SCHWAB_REDIRECT_URI` | Schwab app 注册的 redirect URI |
+
+## 启用 workflow
+
+1. 打开仓库的 **Actions** tab。
+2. 选择 **Schwab Token Auto Refresher**。
+3. 点击 **Enable workflow**。
+4. 可选：用 **Run workflow** 手工触发一次，验证配置。
+
+## 可选代理
+
+如果 Schwab 从住宅网络访问更稳定，可以配置 `SCHWAB_PROXY_URL`，让 Schwab 浏览器流程和 token exchange 请求走认证代理。默认情况下不使用代理。
+
+注意：
+
+- 路由器公网 IP 本身不是代理。
+- 不要把 OpenWrt/LuCI 管理界面暴露到公网。
+- 需要单独部署一个 GitHub Actions 可访问的 HTTP/HTTPS proxy service。
+- 只有 Schwab 自动化流量走代理；依赖安装、GitHub 和 GCP 操作仍走 runner 默认出口。
+
+## 架构
+
+1. GitHub Actions schedule 每 3 天触发一次。
+2. Runner 安装 Google Chrome stable，并初始化 `xvfb` 虚拟显示。
+3. Playwright-stealth 完成 OAuth 流程、输入凭据、生成 TOTP，并截获 redirect code。
+4. 工具用 code 换取 token，并更新 GCP Secret Manager。
+5. 成功时间戳写入 `logs` 分支。
+
+## 许可证
+
+本项目使用 MIT License。详见 `LICENSE`。
