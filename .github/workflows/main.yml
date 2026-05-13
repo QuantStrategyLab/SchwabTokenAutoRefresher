@@ -3,7 +3,16 @@ name: Schwab Token Auto Refresher
 on:
   schedule:
     - cron: '0 13 */3 * *'
-  workflow_dispatch: 
+  workflow_dispatch:
+    inputs:
+      proxy_mode:
+        description: 'Schwab outbound mode for manual runs'
+        required: true
+        default: proxy
+        type: choice
+        options:
+          - proxy
+          - direct
 
 permissions:
   contents: write
@@ -22,6 +31,17 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Resolve Schwab proxy mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.proxy_mode }}" = "direct" ]; then
+            printf 'SCHWAB_PROXY_URL=\n' >> "$GITHUB_ENV"
+            echo "Resolved Schwab proxy mode: direct"
+          else
+            printf 'SCHWAB_PROXY_URL=%s\n' "${{ secrets.SCHWAB_PROXY_URL }}" >> "$GITHUB_ENV"
+            echo "Resolved Schwab proxy mode: proxy"
+          fi
+
       - name: Install Pinned Google Chrome & Dependencies
         run: |
           sudo apt-get update
@@ -36,7 +56,6 @@ jobs:
         run: npm start
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-          SCHWAB_PROXY_URL: ${{ secrets.SCHWAB_PROXY_URL }}
           SCHWAB_USERNAME: ${{ secrets.SCHWAB_USERNAME }}
           SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}
           SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}
