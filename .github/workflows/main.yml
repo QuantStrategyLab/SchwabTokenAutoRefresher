@@ -6,13 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       proxy_mode:
-        description: 'Schwab outbound mode for manual runs'
+        description: 'Optional Schwab primary mode for manual runs'
         required: true
-        default: proxy
+        default: direct
         type: choice
         options:
-          - proxy
           - direct
+          - proxy
 
 permissions:
   contents: write
@@ -31,15 +31,15 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Resolve Schwab proxy mode
+      - name: Resolve Schwab primary mode
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.proxy_mode }}" = "direct" ]; then
-            printf 'SCHWAB_PROXY_URL=\n' >> "$GITHUB_ENV"
-            echo "Resolved Schwab proxy mode: direct"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.proxy_mode }}" = "proxy" ]; then
+            printf 'SCHWAB_FORCE_PROXY_FIRST=true\n' >> "$GITHUB_ENV"
+            echo "Resolved Schwab primary mode: proxy-first"
           else
-            printf 'SCHWAB_PROXY_URL=%s\n' "${{ secrets.SCHWAB_PROXY_URL }}" >> "$GITHUB_ENV"
-            echo "Resolved Schwab proxy mode: proxy"
+            printf 'SCHWAB_FORCE_PROXY_FIRST=false\n' >> "$GITHUB_ENV"
+            echo "Resolved Schwab primary mode: direct-first"
           fi
 
       - name: Install Pinned Google Chrome & Dependencies
@@ -56,6 +56,7 @@ jobs:
         run: npm start
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          SCHWAB_PROXY_URL: ${{ secrets.SCHWAB_PROXY_URL }}
           SCHWAB_USERNAME: ${{ secrets.SCHWAB_USERNAME }}
           SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}
           SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}
