@@ -14,6 +14,10 @@ const {
     resolveProxyUrl,
 } = require('./lib/proxy');
 const {
+    isRetryableWithProxy,
+    looksLikeCredentialOrRiskBanner,
+} = require('./lib/auth_retry');
+const {
     extractAuthorizationCodeFromUrl,
     summarizeAuthorizationCode,
 } = require('./lib/oauth');
@@ -27,7 +31,6 @@ const APP_SECRET = process.env.SCHWAB_APP_SECRET;
 const PROJECT_ID = process.env.GCP_PROJECT_ID;
 const SECRET_ID = process.env.GCP_SECRET_ID;
 const REDIRECT_URI = process.env.SCHWAB_REDIRECT_URI;
-const PROXY_URL = resolveProxyUrl(process.env);
 
 // --- Timing constants ---
 const TIMEOUTS = {
@@ -50,6 +53,8 @@ const TOTP_PERIOD_SECONDS = 30;
 const TOTP_MIN_VALIDITY_SECONDS = 20;
 const TWO_FA_MAX_ATTEMPTS = 2;
 const AUTH_NAVIGATION_MAX_ATTEMPTS = 3;
+const FORCE_PROXY_FIRST = String(process.env.SCHWAB_FORCE_PROXY_FIRST || '').toLowerCase() === 'true';
+const FALLBACK_PROXY_URL = resolveProxyUrl(process.env);
 
 // --- Helpers ---
 const humanDelay = (min = 2000, max = 5000) =>
@@ -281,6 +286,21 @@ async function navigateToLoginForm(page, authUrl) {
     throw new Error('Login form navigation attempts were exhausted.');
 }
 
+async function detectLoginPageRejection(page, loginInput, passwordInput) {
+    const loginVisible = await loginInput.isVisible().catch(() => false);
+    const passwordVisible = await passwordInput.isVisible().catch(() => false);
+    if (!loginVisible || !passwordVisible) {
+        return null;
+    }
+
+    const bodyText = await page.locator('body').innerText({ timeout: 2000 }).catch(() => '');
+    if (looksLikeCredentialOrRiskBanner(bodyText)) {
+        return bodyText;
+    }
+
+    return null;
+}
+
 async function waitForFirstVisible(candidates, timeout, description) {
     const deadline = Date.now() + timeout;
     let lastError = null;
@@ -362,7 +382,7 @@ async function updateAndCleanupSecrets(tokenData) {
     console.log(`Token Version ${newVersion.name.split('/').pop()} synced.`);
 }
 
-async function exchangeCodeForToken(code) {
+async function exchangeCodeForToken(code, proxyUrl) {
     const credentials = Buffer.from(`${APP_KEY}:${APP_SECRET}`).toString('base64');
     const params = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI });
     console.log(`Submitting token exchange with code summary: ${JSON.stringify(summarizeAuthorizationCode(code))}`);
@@ -370,7 +390,7 @@ async function exchangeCodeForToken(code) {
         const response = await axios.post('https://api.schwabapi.com/v1/oauth/token', params.toString(), {
             headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/x-www-form-urlencoded' },
             timeout: 30000,
-            ...buildAxiosProxyConfig(PROXY_URL),
+            ...buildAxiosProxyConfig(proxyUrl),
         });
         const data = response.data;
         if (!data.access_token || !data.refresh_token) {
@@ -398,14 +418,35 @@ async function exchangeCodeForToken(code) {
     }
 }
 
-async function main() {
-    validateEnv();
-    console.log("Starting Chrome OAuth task on GitHub Hosted Runner...");
-    if (PROXY_URL) {
-        console.log(`Using outbound proxy for Schwab traffic: ${maskProxyForLogs(PROXY_URL)}`);
+class RetryWithProxyError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'RetryWithProxyError';
+        this.retryWithProxy = true;
+    }
+}
+
+function buildAttemptPlan() {
+    if (FORCE_PROXY_FIRST) {
+        return [
+            { label: 'proxy', proxyUrl: FALLBACK_PROXY_URL },
+            { label: 'direct', proxyUrl: null },
+        ];
+    }
+
+    return [
+        { label: 'direct', proxyUrl: null },
+        { label: 'proxy', proxyUrl: FALLBACK_PROXY_URL },
+    ];
+}
+
+async function runRefreshOnce({ modeLabel, proxyUrl }) {
+    console.log(`Starting Chrome OAuth task on GitHub Hosted Runner (${modeLabel})...`);
+    if (proxyUrl) {
+        console.log(`Using outbound proxy for Schwab traffic: ${maskProxyForLogs(proxyUrl)}`);
     }
     const authUrl = `https://api.schwabapi.com/v1/oauth/authorize?client_id=${APP_KEY}&redirect_uri=${REDIRECT_URI}`;
-    const userDataDir = path.resolve(__dirname, 'schwab-local-session');
+    const userDataDir = path.resolve(__dirname, `schwab-local-session-${modeLabel}`);
 
     const context = await chromium.launchPersistentContext(userDataDir, {
         channel: 'chrome',
@@ -416,7 +457,7 @@ async function main() {
             `--window-size=${VIEWPORT.width},${VIEWPORT.height}`
         ],
         viewport: VIEWPORT,
-        ...(PROXY_URL ? { proxy: buildPlaywrightProxy(PROXY_URL) } : {}),
+        ...(proxyUrl ? { proxy: buildPlaywrightProxy(proxyUrl) } : {}),
     });
 
     const page = context.pages()[0] || await context.newPage();
@@ -445,6 +486,12 @@ async function main() {
         await loginInput.fill(USERNAME);
         await passwordInput.fill(PASSWORD);
         await page.getByRole('button', { name: 'Log in' }).click();
+        await page.waitForTimeout(3000);
+
+        const rejectionText = await detectLoginPageRejection(page, loginInput, passwordInput);
+        if (rejectionText) {
+            throw new RetryWithProxyError(`Login page rejected credentials or flagged risk: ${sanitizeError(rejectionText)}`);
+        }
 
         console.log("3. Processing 2FA code...");
         try {
@@ -479,18 +526,52 @@ async function main() {
         }
         if (!interceptedCode) throw new Error("Code interception failed after polling.");
 
-        const tokenDict = await exchangeCodeForToken(interceptedCode);
+        const tokenDict = await exchangeCodeForToken(interceptedCode, proxyUrl);
         tokenDict.expires_at = Math.floor(Date.now() / 1000) + tokenDict.expires_in;
         await updateAndCleanupSecrets({ creation_timestamp: Math.floor(Date.now() / 1000), token: tokenDict });
         console.log("SUCCESS! Token refreshed and synced.");
 
     } catch (err) {
-        console.error("Failure:", sanitizeError(err.message));
-        if (err.stack) console.error("Stack:", sanitizeError(err.stack));
         await saveScreenshot(page, 'last_error_state.png');
-        process.exit(1);
+        throw err;
     } finally {
         await context.close();
     }
 }
-main();
+
+async function main() {
+    validateEnv();
+
+    const attemptPlan = buildAttemptPlan().filter(attempt => attempt.label !== 'proxy' || attempt.proxyUrl);
+    if (attemptPlan.length === 0) {
+        throw new Error('No Schwab proxy or direct attempt is available.');
+    }
+
+    let lastError = null;
+    for (let index = 0; index < attemptPlan.length; index += 1) {
+        const attempt = attemptPlan[index];
+        try {
+            await runRefreshOnce(attempt);
+            console.log(`Completed Schwab token refresh using ${attempt.label} mode.`);
+            return;
+        } catch (err) {
+            lastError = err;
+            const shouldRetry = index < attemptPlan.length - 1 && (err.retryWithProxy || isRetryableWithProxy(err.message));
+            if (shouldRetry) {
+                console.log(`Retryable Schwab error on ${attempt.label} mode; trying ${attemptPlan[index + 1].label} mode next.`);
+                continue;
+            }
+            throw err;
+        }
+    }
+
+    if (lastError) {
+        throw lastError;
+    }
+}
+
+main().catch(err => {
+    console.error("Failure:", sanitizeError(err.message));
+    if (err.stack) console.error("Stack:", sanitizeError(err.stack));
+    process.exit(1);
+});

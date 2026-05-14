@@ -3,7 +3,16 @@ name: Schwab Token Auto Refresher
 on:
   schedule:
     - cron: '0 13 */3 * *'
-  workflow_dispatch: 
+  workflow_dispatch:
+    inputs:
+      proxy_mode:
+        description: 'Optional Schwab primary mode for manual runs'
+        required: true
+        default: direct
+        type: choice
+        options:
+          - direct
+          - proxy
 
 permissions:
   contents: write
@@ -21,6 +30,17 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '20'
+
+      - name: Resolve Schwab primary mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.proxy_mode }}" = "proxy" ]; then
+            printf 'SCHWAB_FORCE_PROXY_FIRST=true\n' >> "$GITHUB_ENV"
+            echo "Resolved Schwab primary mode: proxy-first"
+          else
+            printf 'SCHWAB_FORCE_PROXY_FIRST=false\n' >> "$GITHUB_ENV"
+            echo "Resolved Schwab primary mode: direct-first"
+          fi
 
       - name: Install Pinned Google Chrome & Dependencies
         run: |
