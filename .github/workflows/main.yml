@@ -48,7 +48,7 @@ jobs:
           CHROME_VERSION="147.0.7727.137-1"
           CHROME_DEB="google-chrome-stable_${CHROME_VERSION}_amd64.deb"
           curl -fsSLo "$CHROME_DEB" "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/${CHROME_DEB}"
-          sudo apt install -y "./${CHROME_DEB}"
+          sudo apt install -y --allow-downgrades "./${CHROME_DEB}"
           google-chrome --version
           npm ci
 
