@@ -11,12 +11,22 @@ assert.strictEqual(
 );
 
 assert.strictEqual(
+    looksLikeCredentialOrRiskBanner('Log In Invalid login ID or password. Need help? Login ID Password'),
+    true,
+);
+
+assert.strictEqual(
     looksLikeCredentialOrRiskBanner('Login ID Password'),
     false,
 );
 
 assert.strictEqual(
     isRetryableWithProxy('Login page rejected credentials or flagged risk: We can’t log you in right now.'),
+    true,
+);
+
+assert.strictEqual(
+    isRetryableWithProxy('Login page rejected credentials or flagged risk during 2FA step: Invalid login ID or password'),
     true,
 );
 

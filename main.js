@@ -197,6 +197,7 @@ async function collectPageDiagnostics(page, filename) {
         bodyTextLength: diagnostics.bodyTextLength,
         bodyTextPreview: diagnostics.bodyTextPreview.slice(0, 240),
     })}`);
+    return diagnostics;
 }
 
 async function saveScreenshot(page, filename) {
@@ -440,13 +441,14 @@ function buildAttemptPlan() {
     ];
 }
 
-async function runRefreshOnce({ modeLabel, proxyUrl }) {
-    console.log(`Starting Chrome OAuth task on GitHub Hosted Runner (${modeLabel})...`);
+async function runRefreshOnce({ label, modeLabel = label, proxyUrl }) {
+    const effectiveModeLabel = modeLabel || (proxyUrl ? 'proxy' : 'direct');
+    console.log(`Starting Chrome OAuth task on GitHub Hosted Runner (${effectiveModeLabel})...`);
     if (proxyUrl) {
         console.log(`Using outbound proxy for Schwab traffic: ${maskProxyForLogs(proxyUrl)}`);
     }
     const authUrl = `https://api.schwabapi.com/v1/oauth/authorize?client_id=${APP_KEY}&redirect_uri=${REDIRECT_URI}`;
-    const userDataDir = path.resolve(__dirname, `schwab-local-session-${modeLabel}`);
+    const userDataDir = path.resolve(__dirname, `schwab-local-session-${effectiveModeLabel}`);
 
     const context = await chromium.launchPersistentContext(userDataDir, {
         channel: 'chrome',
@@ -498,7 +500,14 @@ async function runRefreshOnce({ modeLabel, proxyUrl }) {
             await submitTwoFactorCode(page);
         } catch (e) {
             await saveScreenshot(page, 'fatal_2fa_missing.png');
-            await collectPageDiagnostics(page, 'fatal_2fa_missing_diagnostics.json');
+            const diagnostics = await collectPageDiagnostics(page, 'fatal_2fa_missing_diagnostics.json');
+            const bodyText = await page.locator('body').innerText({ timeout: 1500 }).catch(() => '');
+            const rejectionText = [diagnostics.title, diagnostics.bodyTextPreview, bodyText]
+                .filter(Boolean)
+                .join(' ');
+            if (looksLikeCredentialOrRiskBanner(rejectionText)) {
+                throw new RetryWithProxyError(`Login page rejected credentials or flagged risk during 2FA step: ${sanitizeError(rejectionText)}`);
+            }
             throw new Error(`2FA step failed: ${sanitizeError(e.message)}`);
         }
 
