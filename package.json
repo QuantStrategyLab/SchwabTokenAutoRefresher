@@ -10,7 +10,7 @@
     "axios": "^1.16.0",
     "https-proxy-agent": "^9.0.0",
     "otpauth": "^9.2.2",
-    "playwright": "^1.42.1",
+    "playwright": "^1.60.0",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
