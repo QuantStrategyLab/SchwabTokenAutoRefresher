@@ -55,6 +55,10 @@ const TWO_FA_MAX_ATTEMPTS = 2;
 const AUTH_NAVIGATION_MAX_ATTEMPTS = 3;
 const FORCE_PROXY_FIRST = String(process.env.SCHWAB_FORCE_PROXY_FIRST || '').toLowerCase() === 'true';
 const FALLBACK_PROXY_URL = resolveProxyUrl(process.env);
+const SECRET_VERSION_RETENTION = Math.max(
+    1,
+    Number.parseInt(process.env.GCP_SECRET_VERSION_RETENTION || '1', 10) || 1,
+);
 
 // --- Helpers ---
 const humanDelay = (min = 2000, max = 5000) =>
@@ -381,6 +385,39 @@ async function updateAndCleanupSecrets(tokenData) {
     const payload = Buffer.from(JSON.stringify(tokenData), 'utf8');
     const [newVersion] = await client.addSecretVersion({ parent, payload: { data: payload } });
     console.log(`Token Version ${newVersion.name.split('/').pop()} synced.`);
+    await cleanupSecretVersions(client, parent, newVersion.name);
+}
+
+function secretVersionNumber(version) {
+    const id = String(version.name || '').split('/').pop();
+    const parsed = Number.parseInt(id, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isActiveSecretVersion(version) {
+    const state = String(version.state || '').toUpperCase();
+    return state === 'ENABLED' || state === 'DISABLED' || state === '1' || state === '2';
+}
+
+async function cleanupSecretVersions(client, parent, newVersionName) {
+    const [versions] = await client.listSecretVersions({ parent });
+    const activeVersions = versions
+        .filter(isActiveSecretVersion)
+        .sort((left, right) => secretVersionNumber(right) - secretVersionNumber(left));
+    const retained = new Set(
+        activeVersions.slice(0, SECRET_VERSION_RETENTION).map(version => version.name),
+    );
+    retained.add(newVersionName);
+
+    let destroyed = 0;
+    for (const version of activeVersions) {
+        if (retained.has(version.name)) {
+            continue;
+        }
+        await client.destroySecretVersion({ name: version.name });
+        destroyed += 1;
+    }
+    console.log(`Secret Manager cleanup retained ${retained.size} version(s), destroyed ${destroyed}.`);
 }
 
 async function exchangeCodeForToken(code, proxyUrl) {
