@@ -1,5 +1,7 @@
 # Schwab Token Auto Refresher
 
+> ⚠️ 投资有风险，不构成投资建议，仅供学习交流用途。
+
 [English](#english) | [中文](#中文)
 
 ---
