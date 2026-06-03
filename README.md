@@ -1,5 +1,36 @@
 # Schwab Token Auto Refresher
 
+<!-- qsl-doc-overview:start -->
+
+> ⚠️ 投资有风险，不构成投资建议，仅供学习交流用途。
+> ⚠️ Investing involves risk. This project does not provide investment advice and is for educational and research purposes only.
+
+## Open-source overview / 开源项目入口
+
+| Item | Description |
+| --- | --- |
+| Project type | credential utility |
+| What it does | Automates Schwab token refresh and syncs credentials to Google Cloud Secret Manager. |
+| 中文说明 | Schwab token 自动刷新工具，把刷新后的凭据同步到 Google Cloud Secret Manager。 |
+| Current status | Credential automation. Secrets must stay in Secret Manager, never in Git or logs. |
+
+### Quick start
+
+- `python -m pip install -e '.[test]'`
+- `python -m pytest -q`
+
+### Deploy / operate safely
+
+Deploy with least-privilege GCP and Schwab scopes; verify redaction and manual rollback before scheduling.
+
+### Strategy performance / evidence boundary
+
+Not a strategy repository; success is reliable token refresh and safe secret handling.
+
+> Detailed runbooks, migration notes, workflow internals, and historical decisions are kept below. Start with this overview before using the lower-level operational sections.
+
+<!-- qsl-doc-overview:end -->
+
 > ⚠️ 投资有风险，不构成投资建议，仅供学习交流用途。
 
 [English](#english) | [中文](#中文)
