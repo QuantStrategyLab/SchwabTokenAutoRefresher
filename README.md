@@ -2,60 +2,36 @@
 
 [Chinese README](README.zh-CN.md)
 
-> ⚠️ Investing involves risk. This project does not provide investment advice and is for educational and research purposes only.
+> Investing involves risk. This project does not provide investment advice and is for education, research, and engineering review only.
 
-## What this project does
+## What this repository is
 
-SchwabTokenAutoRefresher is a **Credential automation utility** in the QuantStrategyLab ecosystem. It automates Schwab OAuth token refresh and syncs refreshed credentials to Google Cloud Secret Manager.
+SchwabTokenAutoRefresher is a QuantStrategyLab credential automation utility. It automates Schwab OAuth token refresh and syncs refreshed credentials to Google Cloud Secret Manager.
 
-## Who this is for
+It supports the system but does not decide which strategy should be live. Strategy eligibility remains in the strategy and snapshot repositories; broker execution remains in the platform repositories.
 
-- Engineers and researchers who want to inspect, reproduce, or extend this part of the QuantStrategyLab stack.
-- Operators who need a clear entry point before reading the deeper runbooks or workflow files.
-- Reviewers who need to understand the repository purpose, safety boundary, and evidence requirements before enabling automation.
+## Design boundary
 
-## Current status
-
-Credential utility. It should never store secrets in Git or print sensitive values in logs.
+- Keep contracts stable and versioned where downstream repositories depend on them.
+- Prefer backward-compatible changes unless a coordinated migration is planned.
+- Keep secrets and environment-specific settings outside the shared library code.
+- Document changes that affect multiple platforms or strategy packages.
 
 ## Repository layout
 
-- `lib/`: shared JavaScript runtime modules.
-- `tests/`: unit and contract tests.
-- `.github/workflows/`: CI, scheduled jobs, and deployment workflows.
+- `tests/`: unit, contract, and regression tests.
+- `.github/workflows/`: CI, scheduled jobs, release, or deployment workflows.
 
 ## Quick start
-
-From a fresh clone:
 
 ```bash
 npm ci
 ```
 
-If a command requires credentials, run it only after reading the relevant workflow or runbook and configuring secrets outside Git.
+## Useful docs
 
-## Deployment and operation
-
-Configure Schwab, Google Cloud, and optional proxy secrets in GitHub Actions. Run the workflow manually once, confirm redacted logs and Secret Manager updates, then enable the schedule.
-
-Prefer manual or dry-run execution first. Enable schedules or live execution only after logs, artifacts, permissions, and rollback steps are reviewed.
-
-## Strategy performance and evidence
-
-Not a strategy repository. Success is measured by safe and reliable token refresh, redacted logs, and correct Secret Manager updates.
-
-README files are intentionally not a source of dated performance promises. Re-run the relevant tests, backtests, or pipeline jobs before relying on any result.
-
-## Safety notes
-
-- Never commit API keys, broker credentials, OAuth tokens, cookies, or account identifiers.
-- Run new strategies and platform changes in dry-run or paper mode before any live execution.
-- Review generated orders, artifacts, and logs manually before enabling schedules.
-
-## Contributing
-
-Keep changes small, reproducible, and covered by the narrowest useful tests. For strategy-facing changes, include the evidence artifact or command used to validate behavior.
+- No separate `docs/` directory yet; start with this README and the workflow files.
 
 ## License
 
-See [LICENSE](LICENSE) if present in this repository.
+See [LICENSE](LICENSE).
