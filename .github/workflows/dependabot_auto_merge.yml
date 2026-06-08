@@ -19,8 +19,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           BRANCH_NAME="${{ github.event.workflow_run.head_branch }}"
-          PR_NUMBER=$(gh pr list --state open --head "${BRANCH_NAME}" --json number --jq '.[0].number // empty')
+          PR_NUMBER=$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${BRANCH_NAME}" --json number --jq '.[0].number // empty')
           if [ -z "${PR_NUMBER}" ]; then
             echo "No open Dependabot PR found for ${BRANCH_NAME}." >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -33,7 +34,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr view "${{ steps.pr.outputs.pr_number }}" --json number,isDraft,author,url,body,labels > pr.json
+          set -euo pipefail
+          gh pr view "${{ steps.pr.outputs.pr_number }}" --repo "${GITHUB_REPOSITORY}" --json number,isDraft,author,url,body,labels > pr.json
           python3 - <<'PY'
           import json
           import os
@@ -45,7 +47,7 @@ jobs:
           body = pr.get("body") or ""
           is_major = "update-type: version-update:semver-major" in body
           should_merge = (
-              author == "dependabot[bot]"
+              author in {"dependabot[bot]", "app/dependabot"}
               and not pr.get("isDraft")
               and "dependencies" in labels
               and not is_major
@@ -81,4 +83,4 @@ jobs:
         if: steps.merge_guard.outputs.should_merge == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge "${{ steps.pr.outputs.pr_number }}" --rebase --delete-branch
+        run: gh pr merge "${{ steps.pr.outputs.pr_number }}" --repo "${GITHUB_REPOSITORY}" --rebase --delete-branch
