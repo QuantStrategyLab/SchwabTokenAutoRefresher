@@ -1,0 +1,8 @@
+[qsl]
+repo = "SchwabTokenAutoRefresher"
+tier = "platform-tooling"
+ring = 4
+allow_legacy = true
+
+[qsl.compat]
+bundle = "2026.07.0"
