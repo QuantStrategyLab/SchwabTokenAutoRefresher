@@ -13,6 +13,14 @@ on:
         options:
           - direct
           - proxy
+      upload_debug_artifacts:
+        description: 'Upload redacted diagnostics on failure for this manual run'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 permissions:
   contents: write
@@ -71,15 +79,14 @@ jobs:
           GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID }}
           SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}
 
-      - name: Upload Error Screenshot
-        if: failure()
+      - name: Upload Redacted Diagnostics
+        if: failure() && github.event_name == 'workflow_dispatch' && inputs.upload_debug_artifacts == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: debug-screenshots
+          name: redacted-diagnostics
           path: |
-            *.png
             *_diagnostics.json
-          retention-days: 3
+          retention-days: 1
 
       - name: Update Log (Bash Version)
         if: success()
