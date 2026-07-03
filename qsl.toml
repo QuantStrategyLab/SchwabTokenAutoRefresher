@@ -5,4 +5,4 @@ ring = 4
 allow_legacy = true
 
 [qsl.compat]
-bundle = "2026.07.0"
+bundle = "2026.07.1"
