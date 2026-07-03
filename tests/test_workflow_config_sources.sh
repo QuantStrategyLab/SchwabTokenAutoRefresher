@@ -22,7 +22,9 @@ grep -Eq "channel: ['\"]chrome['\"]" "$repo_dir/main.js"
 grep -Fq 'PW_TEST_SCREENSHOT_NO_FONTS_READY' "$repo_dir/main.js"
 grep -Fq '#placeholderCode' "$repo_dir/main.js"
 grep -Fq '#continueButton' "$repo_dir/main.js"
-grep -Fq '            *.png' "$workflow_file"
+grep -Fq 'upload_debug_artifacts:' "$workflow_file"
+grep -Fq 'Upload Redacted Diagnostics' "$workflow_file"
+grep -Fq "inputs.upload_debug_artifacts == 'true'" "$workflow_file"
 grep -Fq '            *_diagnostics.json' "$workflow_file"
 
 if grep -Fq 'google-chrome-stable_current_amd64.deb' "$workflow_file"; then
@@ -32,6 +34,11 @@ fi
 
 if grep -Fq 'npx playwright install --with-deps chromium' "$workflow_file"; then
   echo "workflow should install pinned Google Chrome instead of Playwright Chromium for Schwab compatibility" >&2
+  exit 1
+fi
+
+if grep -Fq '            *.png' "$workflow_file"; then
+  echo "workflow should not upload screenshots by default" >&2
   exit 1
 fi
 
