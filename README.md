@@ -32,6 +32,13 @@ npm ci
 
 - No separate `docs/` directory yet; start with this README and the workflow files.
 
+## QSL Compatibility Metadata
+
+- Added `qsl.toml` to participate in the compatibility matrix with `tier = "platform-tooling"`, `ring = 4`, and `compat.bundle = "2026.07.0"`.
+- This repository is a token refresh tooling utility and Node-based helper; no Python package migration is applied in this phase.
+- Change scope is metadata-only with no API/credential/credential-storage path changes.
+
+
 ## Community and security
 
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for pull request scope, local verification, and documentation expectations.
