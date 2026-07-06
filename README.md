@@ -1,5 +1,14 @@
 # SchwabTokenAutoRefresher
 
+
+## QSL architecture role
+
+- **Layer**: `platform-tooling`.
+- **Responsibility**: Schwab OAuth token refresh automation utility.
+- **Owns**: token refresh flow and Secret Manager sync behavior.
+- **Consumes**: Schwab auth endpoints, Google Secret Manager, CharlesSchwabPlatform.
+- **Must not**: decide strategy eligibility or log sensitive token values.
+
 [Chinese README](README.zh-CN.md)
 
 > Investing involves risk. This project does not provide investment advice and is for education, research, and engineering review only.

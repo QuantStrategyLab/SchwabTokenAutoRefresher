@@ -1,5 +1,14 @@
 # SchwabTokenAutoRefresher
 
+
+## QSL 架构角色
+
+- **层级**：`平台工具`。
+- **职责**：Schwab OAuth token refresh 自动化工具。
+- **事实源/归属**：token refresh flow 和 Secret Manager sync 行为。
+- **消费对象**：Schwab auth endpoints、Google Secret Manager、CharlesSchwabPlatform。
+- **禁止事项**：决定策略 eligibility 或记录敏感 token 值。
+
 [English README](README.md)
 
 > 投资有风险。本项目不构成投资建议，仅用于学习、研究和工程审阅。
