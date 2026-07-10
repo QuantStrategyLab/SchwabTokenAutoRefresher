@@ -1,12 +1,11 @@
 name: Codex PR Review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
-  id-token: write
   issues: write
   pull-requests: write
 
@@ -19,10 +18,11 @@ jobs:
     uses: QuantStrategyLab/AIAuditBridge/.github/workflows/codex_pr_review.yml@main
     with:
       caller_concurrency_key: pr-${{ github.event.pull_request.number || github.run_id }}
-      allow_unconfigured_backend: true
+      allow_unconfigured_backend: false
+      api_fallback_enabled: "false"
+      direct_api_primary_enabled: "false"
     secrets: inherit
     permissions:
       contents: read
-      id-token: write
       issues: write
       pull-requests: write
