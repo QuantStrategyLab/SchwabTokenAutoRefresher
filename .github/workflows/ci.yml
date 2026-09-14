@@ -21,10 +21,20 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install pinned Google Chrome
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          CHROME_VERSION="147.0.7727.137-1"
+          CHROME_DEB="google-chrome-stable_${CHROME_VERSION}_amd64.deb"
+          curl -fsSLo "$CHROME_DEB" "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/${CHROME_DEB}"
+          sudo apt install -y --allow-downgrades "./${CHROME_DEB}"
+          google-chrome --version
+
       - name: Install dependencies
         run: |
           set -euo pipefail
-          npm install
+          npm ci
 
       - name: Run checks
         run: |
@@ -33,4 +43,6 @@ jobs:
           node tests/test_auth_code_extraction.js
           node tests/test_auth_retry.js
           node tests/test_proxy_config.js
+          node tests/test_totp_dependency.js
+          node tests/test_playwright_dependency.js
           bash tests/test_workflow_config_sources.sh
