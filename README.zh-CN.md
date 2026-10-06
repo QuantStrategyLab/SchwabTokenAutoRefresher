@@ -1,23 +1,10 @@
 # SchwabTokenAutoRefresher
 
-
-## QSL 架构角色
-
-- **层级**：`平台工具`。
-- **职责**：Schwab OAuth token refresh 自动化工具。
-- **事实源/归属**：token refresh flow 和 Secret Manager sync 行为。
-- **消费对象**：Schwab auth endpoints、Google Secret Manager、CharlesSchwabPlatform。
-- **禁止事项**：决定策略 eligibility 或记录敏感 token 值。
-
 [English README](README.md)
 
+SchwabTokenAutoRefresher 是 QuantStrategyLab 的凭据自动化工具，按计划刷新 Schwab OAuth token，并把刷新后的凭据同步到 Google Cloud Secret Manager，让其他平台服务随时能拿到有效凭据，不需要人工续期。它支撑系统运行，但不决定哪个策略应该 live：策略资格由策略仓和 snapshot 仓负责，券商执行由平台仓负责。
+
 > 投资有风险。本项目不构成投资建议，仅用于学习、研究和工程审阅。
-
-## 这个仓库是什么
-
-SchwabTokenAutoRefresher 是 QuantStrategyLab 的凭据自动化工具。自动刷新 Schwab OAuth token，并把刷新后的凭据同步到 Google Cloud Secret Manager。
-
-它支撑系统运行，但不决定哪个策略应该 live。策略资格由策略仓和 snapshot 仓负责；券商执行由平台仓负责。
 
 ## 设计边界
 
@@ -40,6 +27,14 @@ npm ci
 ## 延伸文档
 
 - 暂无独立 `docs/` 目录；请先阅读本 README 和 workflow 文件。
+
+## QSL 架构角色
+
+- **层级**：`平台工具`。
+- **职责**：Schwab OAuth token refresh 自动化工具。
+- **事实源/归属**：token refresh flow 和 Secret Manager sync 行为。
+- **消费对象**：Schwab auth endpoints、Google Secret Manager、CharlesSchwabPlatform。
+- **禁止事项**：决定策略 eligibility 或记录敏感 token 值。
 
 ## 社区和安全
 

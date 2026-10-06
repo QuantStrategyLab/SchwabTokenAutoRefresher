@@ -1,23 +1,10 @@
 # SchwabTokenAutoRefresher
 
-
-## QSL architecture role
-
-- **Layer**: `platform-tooling`.
-- **Responsibility**: Schwab OAuth token refresh automation utility.
-- **Owns**: token refresh flow and Secret Manager sync behavior.
-- **Consumes**: Schwab auth endpoints, Google Secret Manager, CharlesSchwabPlatform.
-- **Must not**: decide strategy eligibility or log sensitive token values.
-
 [Chinese README](README.zh-CN.md)
 
+SchwabTokenAutoRefresher is a QuantStrategyLab credential automation utility. It runs the Schwab OAuth token refresh flow on a schedule and syncs the refreshed credentials to Google Cloud Secret Manager, so other platform services always have a valid token without manual renewal. It supports the system but does not decide which strategy should go live: strategy eligibility stays with the strategy and snapshot repositories, and broker execution stays with the platform repositories.
+
 > Investing involves risk. This project does not provide investment advice and is for education, research, and engineering review only.
-
-## What this repository is
-
-SchwabTokenAutoRefresher is a QuantStrategyLab credential automation utility. It automates Schwab OAuth token refresh and syncs refreshed credentials to Google Cloud Secret Manager.
-
-It supports the system but does not decide which strategy should be live. Strategy eligibility remains in the strategy and snapshot repositories; broker execution remains in the platform repositories.
 
 ## Design boundary
 
@@ -40,6 +27,14 @@ npm ci
 ## Useful docs
 
 - No separate `docs/` directory yet; start with this README and the workflow files.
+
+## QSL architecture role
+
+- **Layer**: `platform-tooling`.
+- **Responsibility**: Schwab OAuth token refresh automation utility.
+- **Owns**: token refresh flow and Secret Manager sync behavior.
+- **Consumes**: Schwab auth endpoints, Google Secret Manager, CharlesSchwabPlatform.
+- **Must not**: decide strategy eligibility or log sensitive token values.
 
 ## QSL Compatibility Metadata
 
