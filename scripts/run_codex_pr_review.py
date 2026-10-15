@@ -2,7 +2,7 @@
 """Deprecated compatibility entrypoint for the centralized Codex PR review workflow.
 
 This repository now delegates PR review to
-QuantStrategyLab/AIAuditBridge/.github/workflows/codex_pr_review.yml.
+QuantStrategyLab/PersonalAIService/.github/workflows/codex_pr_review.yml.
 The local runner is intentionally kept as a tiny stub so old links fail clearly
 without reintroducing copied review logic.
 """
@@ -15,7 +15,7 @@ import sys
 def main() -> int:
     print(
         "Local Codex PR review runner has moved to "
-        "QuantStrategyLab/AIAuditBridge reusable workflow.",
+        "QuantStrategyLab/PersonalAIService reusable workflow.",
         file=sys.stderr,
     )
     return 2
