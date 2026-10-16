@@ -36,12 +36,10 @@ npm ci
 - **Consumes**: Schwab auth endpoints, Google Secret Manager, CharlesSchwabPlatform.
 - **Must not**: decide strategy eligibility or log sensitive token values.
 
-## QSL Compatibility Metadata
+## QSL compatibility
 
-- Added `qsl.toml` to participate in the compatibility matrix with `tier = "platform-tooling"`, `ring = 4`, and `compat.bundle = "2026.07.0"`.
-- This repository is a token refresh tooling utility and Node-based helper; no Python package migration is applied in this phase.
-- Change scope is metadata-only with no API/credential/credential-storage path changes.
-
+- `qsl.toml` records `tier`, `upgrade_ring`, and `compat.bundle` for compatibility checks.
+- This Node.js token refresh utility uses `npm` for dependency installation.
 
 ## Community and security
 
