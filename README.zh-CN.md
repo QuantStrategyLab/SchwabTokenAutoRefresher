@@ -36,6 +36,11 @@ npm ci
 - **消费对象**：Schwab auth endpoints、Google Secret Manager、CharlesSchwabPlatform。
 - **禁止事项**：决定策略 eligibility 或记录敏感 token 值。
 
+## QSL 兼容性
+
+- `qsl.toml` 记录 `tier`、`upgrade_ring` 和 `compat.bundle`，用于兼容性检查。
+- 这个 Node.js token 刷新工具通过 `npm` 安装依赖。
+
 ## 社区和安全
 
 - 贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，确认 PR 范围、本地校验和文档要求。
