@@ -61,7 +61,7 @@ node tests/test_auth_code_extraction.js
 | `GCP_PROJECT_ID` | Yes | none | Google Cloud project that holds the secret. |
 | `GCP_SECRET_ID` | Yes | none | Secret Manager secret to update. |
 | `GCP_SA_KEY` | No | ambient credentials | Service account key JSON when ambient credentials are not available. |
-| `GCP_SECRET_VERSION_RETENTION` | No | `1` | Number of secret versions to keep; older versions are disabled. |
+| `GCP_SECRET_VERSION_RETENTION` | No | `1` | Number of secret versions to keep; older versions are permanently destroyed and cannot be restored. |
 | `SCHWAB_PROXY_URL` | No | none | HTTP proxy for the login flow. |
 | `SCHWAB_FORCE_PROXY_FIRST` | No | disabled | Use the proxy before a direct connection when set to `true`. |
 
@@ -70,7 +70,7 @@ node tests/test_auth_code_extraction.js
 ```
 main.js     scheduled refresh entrypoint
 lib/        proxy, OAuth, and retry helpers
-tests/      dependency-free unit tests
+tests/      unit tests (use installed dependencies)
 prompts/    review prompt text
 scripts/    operator helpers
 ```

@@ -51,7 +51,7 @@ node tests/test_auth_code_extraction.js
 | `GCP_PROJECT_ID` | 是 | 无 | 存放密钥的 Google Cloud 项目。 |
 | `GCP_SECRET_ID` | 是 | 无 | 要更新的 Secret Manager 密钥。 |
 | `GCP_SA_KEY` | 否 | 环境默认凭据 | 无法使用环境默认凭据时提供的 service account key JSON。 |
-| `GCP_SECRET_VERSION_RETENTION` | 否 | `1` | 保留的密钥版本数量；更早的版本会被停用。 |
+| `GCP_SECRET_VERSION_RETENTION` | 否 | `1` | 保留的密钥版本数量；更早的版本会被永久销毁，无法恢复。 |
 | `SCHWAB_PROXY_URL` | 否 | 无 | 登录流程使用的 HTTP 代理。 |
 | `SCHWAB_FORCE_PROXY_FIRST` | 否 | 关闭 | 设为 `true` 时优先经代理连接，再尝试直连。 |
 
@@ -60,7 +60,7 @@ node tests/test_auth_code_extraction.js
 ```
 main.js     定时刷新入口
 lib/        代理、OAuth 和重试辅助模块
-tests/      无外部依赖的单元测试
+tests/      单元测试（使用已安装的依赖）
 prompts/    审阅提示词
 scripts/    运维脚本
 ```
