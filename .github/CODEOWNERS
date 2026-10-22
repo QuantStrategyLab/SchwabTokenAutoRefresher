@@ -10,5 +10,5 @@
 # Engineering review scope: /.github/workflows/
 # Engineering review scope: /package-lock.json
 # Engineering review scope: /package.json
-# The AIAuditBridge dependency lane only covers its existing exact allowlist;
+# The QuantAIService dependency lane only covers its existing exact allowlist;
 # other dependency/workflow updates remain blocked from unattended adoption.
