@@ -39,6 +39,8 @@ node tests/test_workflow_config_sources.sh
 `tests/test_workflow_config_sources.sh` runs with `bash`, not `node`. CI installs
 a pinned Chrome build and runs the remaining Node tests.
 
+Organization documentation rules are checked by `python scripts/check_style.py`, which also runs in CI as the `Documentation check` job.
+
 ## Naming and documentation
 
 - Developer documentation is English by default; Chinese siblings use
