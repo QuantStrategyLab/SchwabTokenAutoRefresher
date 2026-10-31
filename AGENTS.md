@@ -70,6 +70,8 @@ Organization documentation rules are checked by `python scripts/check_style.py`,
 
 ## Do not
 
+- Only the owner, or a reviewer explicitly authorized by the owner, may apply the `owner-approved` label; coding agents must never apply it to their own PRs.
+
 - Do not log, print or commit tokens, cookies, TOTP seeds or account identifiers.
 - Do not change secret names, scopes or the destination secret without owner
   authorization; a misconfiguration stops other services from authenticating.
