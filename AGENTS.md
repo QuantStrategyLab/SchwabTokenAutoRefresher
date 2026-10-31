@@ -33,7 +33,7 @@ npm ci
 node --check main.js
 node tests/test_auth_code_extraction.js
 node tests/test_auth_retry.js
-node tests/test_workflow_config_sources.sh
+bash tests/test_workflow_config_sources.sh
 ```
 
 `tests/test_workflow_config_sources.sh` runs with `bash`, not `node`. CI installs
