@@ -14,7 +14,7 @@ grep -Fq 'SCHWAB_USERNAME: ${{ secrets.SCHWAB_USERNAME }}' "$workflow_file"
 grep -Fq 'SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}' "$workflow_file"
 grep -Fq 'SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}' "$workflow_file"
 grep -Fq 'permissions:' "$workflow_file"
-grep -Fq 'contents: write' "$workflow_file"
+grep -Fq 'contents: read' "$workflow_file"
 grep -Fq 'CHROME_VERSION="147.0.7727.137-1"' "$workflow_file"
 grep -Fq 'https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/${CHROME_DEB}' "$workflow_file"
 grep -Fq 'sudo apt install -y --allow-downgrades "./${CHROME_DEB}"' "$workflow_file"
@@ -54,5 +54,10 @@ fi
 
 if grep -Fq 'secrets.SCHWAB_REDIRECT_URI' "$workflow_file"; then
   echo "workflow should not read SCHWAB_REDIRECT_URI from secrets anymore" >&2
+  exit 1
+fi
+
+if grep -Eq 'git push|git checkout -B logs' "$workflow_file"; then
+  echo "Runtime diagnostics must not be committed to a public branch" >&2
   exit 1
 fi

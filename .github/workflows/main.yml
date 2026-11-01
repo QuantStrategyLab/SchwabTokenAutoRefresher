@@ -23,7 +23,7 @@ on:
           - 'true'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
@@ -88,13 +88,7 @@ jobs:
             *_diagnostics.json
           retention-days: 1
 
-      - name: Update Log (Bash Version)
+      - name: Record last success time
         if: success()
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          echo "Last successful refresh: $(date '+%Y-%m-%d %H:%M:%S')" > last_run.txt
-          git checkout -B logs
-          git add last_run.txt
-          git commit -m "chore: update token refresh log [skip ci]"
-          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" logs --force
+          printf 'Last success: %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_STEP_SUMMARY"
