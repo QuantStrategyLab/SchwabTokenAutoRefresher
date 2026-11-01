@@ -23,7 +23,7 @@ on:
           - 'true'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
@@ -80,45 +80,29 @@ jobs:
           SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}
 
       - name: Stage redacted diagnostics
-        id: stage_diagnostics
-        if: failure() && github.event_name == 'workflow_dispatch' && inputs.upload_debug_artifacts == 'true'
+        id: stage-diagnostics
+        if: failure() && github.event_name == 'workflow_dispatch' && inputs.upload_debug_artifacts == 'true' && hashFiles('*_diagnostics.json') != ''
+        shell: bash
         run: |
-          mkdir -p publish-diagnostics
-          cp ./*_diagnostics.json publish-diagnostics/
+          mkdir -p "$RUNNER_TEMP/redacted-diagnostics"
+          cp -- *_diagnostics.json "$RUNNER_TEMP/redacted-diagnostics/"
 
-      - name: Scan diagnostics before upload
-        id: scan_diagnostics
-        if: failure() && steps.stage_diagnostics.outcome == 'success'
+      - name: Scan redacted diagnostics before publication
+        id: scan-diagnostics
+        if: always() && steps.stage-diagnostics.outcome == 'success'
         uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273
         with:
-          path: publish-diagnostics
+          path: ${{ runner.temp }}/redacted-diagnostics
 
       - name: Upload Redacted Diagnostics
-        if: failure() && steps.scan_diagnostics.outcome == 'success'
+        if: always() && steps.scan-diagnostics.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: redacted-diagnostics
-          path: |
-            *_diagnostics.json
+          path: ${{ runner.temp }}/redacted-diagnostics
           retention-days: 1
 
-      - name: Prepare log commit (Bash Version)
+      - name: Record last success time
         if: success()
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          echo "Last successful refresh: $(date '+%Y-%m-%d %H:%M:%S')" > last_run.txt
-          git checkout -B logs
-          git add last_run.txt
-          git commit -m "chore: update token refresh log [skip ci]"
-
-      - name: Scan the log publication
-        if: success()
-        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273
-        with:
-          path: last_run.txt
-
-      - name: Publish log commit
-        if: success()
-        run: |
-          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" logs --force
+          printf 'Last success: %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_STEP_SUMMARY"

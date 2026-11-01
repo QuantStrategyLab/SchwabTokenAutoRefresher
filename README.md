@@ -87,3 +87,5 @@ Never commit credentials or token material.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+Run output is no longer committed to the public `logs` branch. Successful runs add only the last success time to the Actions summary. Existing branch history is unchanged.
