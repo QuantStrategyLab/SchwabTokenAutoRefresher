@@ -79,13 +79,27 @@ jobs:
           GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID }}
           SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}
 
+      - name: Stage redacted diagnostics
+        id: stage-diagnostics
+        if: failure() && github.event_name == 'workflow_dispatch' && inputs.upload_debug_artifacts == 'true' && hashFiles('*_diagnostics.json') != ''
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/redacted-diagnostics"
+          cp -- *_diagnostics.json "$RUNNER_TEMP/redacted-diagnostics/"
+
+      - name: Scan redacted diagnostics before publication
+        id: scan-diagnostics
+        if: always() && steps.stage-diagnostics.outcome == 'success'
+        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273
+        with:
+          path: ${{ runner.temp }}/redacted-diagnostics
+
       - name: Upload Redacted Diagnostics
-        if: failure() && github.event_name == 'workflow_dispatch' && inputs.upload_debug_artifacts == 'true'
+        if: always() && steps.scan-diagnostics.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: redacted-diagnostics
-          path: |
-            *_diagnostics.json
+          path: ${{ runner.temp }}/redacted-diagnostics
           retention-days: 1
 
       - name: Record last success time

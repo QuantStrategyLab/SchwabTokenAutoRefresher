@@ -25,7 +25,7 @@ grep -Fq '#continueButton' "$repo_dir/main.js"
 grep -Fq 'upload_debug_artifacts:' "$workflow_file"
 grep -Fq 'Upload Redacted Diagnostics' "$workflow_file"
 grep -Fq "inputs.upload_debug_artifacts == 'true'" "$workflow_file"
-grep -Fq '            *_diagnostics.json' "$workflow_file"
+grep -Fq '          path: ${{ runner.temp }}/redacted-diagnostics' "$workflow_file"
 
 if grep -Fq 'google-chrome-stable_current_amd64.deb' "$workflow_file"; then
   echo "workflow should not install floating Google Chrome stable anymore" >&2
@@ -61,3 +61,6 @@ if grep -Eq 'git push|git checkout -B logs' "$workflow_file"; then
   echo "Runtime diagnostics must not be committed to a public branch" >&2
   exit 1
 fi
+
+grep -Fq 'Scan redacted diagnostics before publication' "$workflow_file"
+grep -Fq "steps.scan-diagnostics.outcome == 'success'" "$workflow_file"
