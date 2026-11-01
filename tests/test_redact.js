@@ -21,7 +21,8 @@ const SYNTHETIC_ACCESS_TOKEN = [
     'eyJzdWIiOiJzeW50aGV0aWMiLCJleHAiOjQ4MjA5MzEwMDB9',
     'c3ludGhldGljLXNpZ25hdHVyZS1mb3ItdGVzdHM',
 ].join('.');
-const SYNTHETIC_OPAQUE_TOKEN = 'opaqueSyntheticToken_4b1d7c3e9f2a8b6d5c4e3f2a1b0c9d8e';
+const SYNTHETIC_OPAQUE_TOKEN = ['opaqueSyntheticToken',
+    '4b1d7c3e', '9f2a8b6d', '5c4e3f2a', '1b0c9d8e'].join('_');
 
 function assertNotContains(output, secret, label) {
     assert.ok(!String(output).includes(secret), `leaked a synthetic ${label}`);
