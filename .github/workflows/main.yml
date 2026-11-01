@@ -99,7 +99,7 @@ jobs:
         with:
           name: redacted-diagnostics
           path: |
-            publish-diagnostics/*_diagnostics.json
+            *_diagnostics.json
           retention-days: 1
 
       - name: Prepare log commit (Bash Version)
