@@ -27,12 +27,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0 
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '20'
 
@@ -77,13 +77,13 @@ jobs:
       - name: Scan diagnostics before upload
         id: scan_diagnostics
         if: failure() && steps.stage_diagnostics.outcome == 'success'
-        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273
+        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273 # No release tag published
         with:
           path: publish-diagnostics
 
       - name: Upload Redacted Diagnostics
         if: failure() && steps.scan_diagnostics.outcome == 'success'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: redacted-diagnostics
           path: |
@@ -102,7 +102,7 @@ jobs:
 
       - name: Scan the log publication
         if: success()
-        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273
+        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273 # No release tag published
         with:
           path: last_run.txt
 
