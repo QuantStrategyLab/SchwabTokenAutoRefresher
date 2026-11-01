@@ -346,7 +346,9 @@ async function updateAndCleanupSecrets(tokenData) {
         try {
             options.credentials = JSON.parse(process.env.GCP_SA_KEY);
         } catch (e) {
-            throw new Error(`GCP_SA_KEY is not valid JSON: ${e.message}`);
+            // JSON.parse errors can embed a fragment of the input, which is
+            // a credential here; never echo the parse message.
+            throw new Error('GCP_SA_KEY is not valid JSON');
         }
     }
     const client = new SecretManagerServiceClient(options);
@@ -411,7 +413,7 @@ async function exchangeCodeForToken(code, proxyUrl) {
                 ? err.response.data
                 : JSON.stringify(err.response.data);
             throw new Error(`Token exchange failed: ${err.response.status} ${JSON.stringify({
-                body: responseData.slice(0, 300),
+                body: sanitizeError(responseData.slice(0, 300)),
                 bodyLength: responseData.length,
                 headers: {
                     contentType: responseHeaders['content-type'] || null,
@@ -421,7 +423,7 @@ async function exchangeCodeForToken(code, proxyUrl) {
                 },
             })}`);
         }
-        throw new Error(`Token exchange network error: ${err.message}`);
+        throw new Error(`Token exchange network error: ${sanitizeError(err.message)}`);
     }
 }
 
