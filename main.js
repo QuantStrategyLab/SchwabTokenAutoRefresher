@@ -413,7 +413,9 @@ async function exchangeCodeForToken(code, proxyUrl) {
                 ? err.response.data
                 : JSON.stringify(err.response.data);
             throw new Error(`Token exchange failed: ${err.response.status} ${JSON.stringify({
-                body: sanitizeError(responseData.slice(0, 300)),
+                // Response bodies can echo arbitrary credentials, including
+                // escaped values or tokens crossing a preview boundary.
+                body: '[REDACTED]',
                 bodyLength: responseData.length,
                 headers: {
                     contentType: responseHeaders['content-type'] || null,
