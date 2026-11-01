@@ -221,7 +221,7 @@ function loadSyntheticMain(scenario = {}) {
                     err.response = {
                         status: 400,
                         headers: {},
-                        data: {
+                        data: scenario.responseData ?? {
                             error: 'invalid_grant',
                             error_description: ['code echoed ', SYNTHETIC_ACCESS_TOKEN].join(''),
                         },
@@ -266,7 +266,7 @@ function loadSyntheticMain(scenario = {}) {
         process: {
             env: {
                 SCHWAB_USERNAME: 'synthetic-user-9f2a',
-                SCHWAB_PASSWORD: SYNTHETIC_PASSWORD,
+                SCHWAB_PASSWORD: scenario.envPassword || SYNTHETIC_PASSWORD,
                 SCHWAB_TOTP_SECRET: SYNTHETIC_TOTP_SEED,
                 SCHWAB_API_KEY: 'demo-x',
                 SCHWAB_APP_SECRET: 'demo-s',
@@ -360,6 +360,37 @@ async function awaitExit(run) {
     await awaitExit(responseRun);
     assertNotContains(responseRun.capturedText(), SYNTHETIC_ACCESS_TOKEN, 'access token');
     assert.ok(responseRun.capturedText().includes('[REDACTED'));
+
+    // A token crossing the old 300-character preview boundary must not leave
+    // a short prefix behind when the response body is logged.
+    const tokenPrefix = SYNTHETIC_OPAQUE_TOKEN.slice(0, 10);
+    const boundaryRun = loadSyntheticMain({
+        tokenResponseError: true,
+        responseData: '-'.repeat(300 - tokenPrefix.length) + SYNTHETIC_OPAQUE_TOKEN,
+    });
+    await awaitExit(boundaryRun);
+    assertNotContains(boundaryRun.capturedText(), tokenPrefix, 'token prefix');
+    assert.ok(boundaryRun.capturedText().includes('Token exchange failed: 400'));
+    assert.ok(boundaryRun.capturedText().includes('"body":"[REDACTED]"'));
+    assert.ok(boundaryRun.capturedText().includes(
+        `"bodyLength":${300 - tokenPrefix.length + SYNTHETIC_OPAQUE_TOKEN.length}`,
+    ));
+
+    // JSON serialization escapes quotes, backslashes and control characters;
+    // matching only the original password cannot protect this response body.
+    const escapedPassword = 'synthetic-"password\\with\ncontrols';
+    const escapedRun = loadSyntheticMain({
+        tokenResponseError: true,
+        envPassword: escapedPassword,
+        responseData: { error_description: escapedPassword },
+    });
+    await awaitExit(escapedRun);
+    const escapedOutput = escapedRun.capturedText();
+    assertNotContains(escapedOutput, escapedPassword, 'password');
+    assertNotContains(escapedOutput, 'synthetic-', 'escaped password prefix');
+    assertNotContains(escapedOutput, 'error_description', 'response field');
+    assert.ok(escapedOutput.includes('Token exchange failed: 400'));
+    assert.ok(escapedOutput.includes('"body":"[REDACTED]"'));
 
     // Invalid GCP_SA_KEY: the JSON parse error message can embed a fragment
     // of the key and must not be echoed into the failure log.
