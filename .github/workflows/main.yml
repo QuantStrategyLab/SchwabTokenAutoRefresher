@@ -79,8 +79,22 @@ jobs:
           GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID }}
           SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}
 
-      - name: Upload Redacted Diagnostics
+      - name: Stage redacted diagnostics
+        id: stage_diagnostics
         if: failure() && github.event_name == 'workflow_dispatch' && inputs.upload_debug_artifacts == 'true'
+        run: |
+          mkdir -p publish-diagnostics
+          cp ./*_diagnostics.json publish-diagnostics/
+
+      - name: Scan diagnostics before upload
+        id: scan_diagnostics
+        if: failure() && steps.stage_diagnostics.outcome == 'success'
+        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273
+        with:
+          path: publish-diagnostics
+
+      - name: Upload Redacted Diagnostics
+        if: failure() && steps.scan_diagnostics.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: redacted-diagnostics
@@ -88,7 +102,7 @@ jobs:
             *_diagnostics.json
           retention-days: 1
 
-      - name: Update Log (Bash Version)
+      - name: Prepare log commit (Bash Version)
         if: success()
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -97,4 +111,14 @@ jobs:
           git checkout -B logs
           git add last_run.txt
           git commit -m "chore: update token refresh log [skip ci]"
+
+      - name: Scan the log publication
+        if: success()
+        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273
+        with:
+          path: last_run.txt
+
+      - name: Publish log commit
+        if: success()
+        run: |
           git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" logs --force
