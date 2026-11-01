@@ -42,7 +42,8 @@ jobs:
           node --check main.js
           node tests/test_auth_code_extraction.js
           node tests/test_auth_retry.js
-          node tests/test_proxy_config.js
+          node --check scripts/notify_refresh_failure.js
+          node tests/test_refresh_failure_alert.js
           node tests/test_totp_dependency.js
           node tests/test_playwright_dependency.js
           bash tests/test_workflow_config_sources.sh

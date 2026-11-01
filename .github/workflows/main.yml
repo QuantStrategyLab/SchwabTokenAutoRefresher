@@ -5,14 +5,6 @@ on:
     - cron: '0 13 */3 * *'
   workflow_dispatch:
     inputs:
-      proxy_mode:
-        description: 'Optional Schwab primary mode for manual runs'
-        required: true
-        default: direct
-        type: choice
-        options:
-          - direct
-          - proxy
       upload_debug_artifacts:
         description: 'Upload redacted diagnostics on failure for this manual run'
         required: true
@@ -44,17 +36,6 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Resolve Schwab primary mode
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.proxy_mode }}" = "proxy" ]; then
-            printf 'SCHWAB_FORCE_PROXY_FIRST=true\n' >> "$GITHUB_ENV"
-            echo "Resolved Schwab primary mode: proxy-first"
-          else
-            printf 'SCHWAB_FORCE_PROXY_FIRST=false\n' >> "$GITHUB_ENV"
-            echo "Resolved Schwab primary mode: direct-first"
-          fi
-
       - name: Install Pinned Google Chrome & Dependencies
         run: |
           sudo apt-get update
@@ -65,11 +46,11 @@ jobs:
           google-chrome --version
           npm ci
 
+      # SCHWAB_PROXY_URL retired on 2026-11-02; keep the secret, but do not read it.
       - name: Run Refresh Script
         run: npm start
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-          SCHWAB_PROXY_URL: ${{ secrets.SCHWAB_PROXY_URL }}
           SCHWAB_USERNAME: ${{ secrets.SCHWAB_USERNAME }}
           SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}
           SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}
@@ -78,6 +59,13 @@ jobs:
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID }}
           SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}
+
+      - name: Alert refresh failure via Telegram
+        if: failure()
+        run: node scripts/notify_refresh_failure.js
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN || secrets.TG_TOKEN }}
+          GLOBAL_TELEGRAM_CHAT_ID: ${{ secrets.GLOBAL_TELEGRAM_CHAT_ID }}
 
       - name: Stage redacted diagnostics
         id: stage_diagnostics

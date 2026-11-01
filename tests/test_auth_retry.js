@@ -2,12 +2,12 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { isRetryableWithProxy, looksLikeCredentialOrRiskBanner } = require('../lib/auth_retry');
+const { looksLikeCredentialOrRiskBanner } = require('../lib/auth_retry');
 
 function loadSyntheticMain(scenario = {}) {
     const counts = { launches: 0, navigations: 0, fills: 0, logins: 0, codes: 0, exchanges: 0, writes: 0 };
     let redirect;
-    const failure = message => Object.assign(new Error(message), { retryWithProxy: true });
+    const failure = message => new Error(message);
     const input = kind => ({
         first() { return this; },
         async waitFor() {
@@ -55,22 +55,27 @@ function loadSyntheticMain(scenario = {}) {
     const forbidden = () => { throw new Error('FORBIDDEN_REAL_OPERATION'); };
     const fakeRequire = name => {
         if (name === 'playwright-extra') return { chromium: {
-            use() {}, async launchPersistentContext() {
+            use() {}, async launchPersistentContext(directory, options) {
                 counts.launches += 1;
+                if (scenario.retiredProxyEnv) {
+                    assert.strictEqual(options.proxy, undefined);
+                    assert.ok(options.args.includes('--no-proxy-server'));
+                }
                 return { pages: () => [page], async close() {} };
             },
         } };
         if (name === 'puppeteer-extra-plugin-stealth') return () => ({});
-        if (name === 'axios') return { post: forbidden };
+        if (name === 'axios') return { async post(url, body, options) {
+            assert.strictEqual(options.proxy, false);
+            assert.strictEqual(options.httpAgent, undefined);
+            assert.strictEqual(options.httpsAgent, undefined);
+            return { data: { access_token: 'synthetic-access', refresh_token: 'synthetic-refresh' } };
+        } };
         if (name === 'otpauth') return { TOTP: class { generate() { return 'synthetic-code'; } } };
         if (name === '@google-cloud/secret-manager') return { SecretManagerServiceClient: forbidden };
         if (name === 'path') return path;
         if (name === 'fs') return { writeFileSync: forbidden };
         if (name === './lib/auth_retry') return require('../lib/auth_retry');
-        if (name === './lib/proxy') return {
-            resolveProxyUrl: () => 'http://proxy.invalid', buildPlaywrightProxy: () => ({}),
-            buildAxiosProxyConfig: () => ({}), maskProxyForLogs: () => 'synthetic-proxy',
-        };
         if (name === './lib/oauth') return {
             extractAuthorizationCodeFromUrl: () => 'synthetic-code', summarizeAuthorizationCode: () => ({}),
         };
@@ -80,12 +85,14 @@ function loadSyntheticMain(scenario = {}) {
     const context = vm.createContext({
         require: fakeRequire, module: {}, __dirname: '/synthetic', URL, URLSearchParams, Buffer,
         console: { log() {}, error() {} }, setTimeout(callback) { callback(); },
-        process: { env: { SCHWAB_TOTP_SECRET: '' }, exit: forbidden },
+        process: { env: { SCHWAB_TOTP_SECRET: '', ...(scenario.retiredProxyEnv ? {
+            SCHWAB_PROXY_URL: 'http://proxy.invalid:1080', SCHWAB_FORCE_PROXY_FIRST: 'true',
+            HTTPS_PROXY: 'http://proxy.invalid:1080', HTTP_PROXY: 'http://proxy.invalid:1080',
+        } : {}) }, exit: forbidden },
     });
     const source = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    // The baseline has an unconditional CLI bootstrap; never run it in this test.
-    const definitions = source.replace(/\nmain\(\)\.catch\([\s\S]*$/, '\n');
-    vm.runInContext(definitions, context);
+    vm.runInContext(source, context);
+    const exchange = vm.runInContext('exchangeCodeForToken', context);
     context.syntheticExchange = async () => {
         counts.exchanges += 1;
         if (scenario.exchangeError) throw failure('Token exchange network error: net::ERR_CONNECTION_REFUSED');
@@ -102,7 +109,7 @@ function loadSyntheticMain(scenario = {}) {
         updateAndCleanupSecrets = syntheticWrite;
         smartClick = syntheticConsent;
     `, context);
-    return { counts, main: vm.runInContext('main', context), source };
+    return { counts, main: vm.runInContext('main', context), exchange, source };
 }
 
 (async () => {
@@ -112,17 +119,11 @@ function loadSyntheticMain(scenario = {}) {
         'Enter a valid 6-digit security code.',
     ];
     for (const message of denials) {
-        assert.strictEqual(isRetryableWithProxy(`${message}: net::ERR_CONNECTION_REFUSED`, true), false);
+        assert.strictEqual(looksLikeCredentialOrRiskBanner(message), true);
     }
     assert.strictEqual(looksLikeCredentialOrRiskBanner('We can’t log you in right now.'), true);
     assert.strictEqual(looksLikeCredentialOrRiskBanner('Login ID Password'), false);
     assert.strictEqual(looksLikeCredentialOrRiskBanner('Investing involves risk.'), false);
-    assert.strictEqual(isRetryableWithProxy('net::ERR_TUNNEL_CONNECTION_FAILED'), false);
-    assert.strictEqual(isRetryableWithProxy('net::ERR_TUNNEL_CONNECTION_FAILED', true), true);
-    for (const message of ['net::ERR_CONNECTION_RESET', 'net::ERR_CONNECTION_CLOSED', 'navigation timeout',
-        'Token exchange network error', 'Login form did not become visible after 3 attempts']) {
-        assert.strictEqual(isRetryableWithProxy(message, true), false);
-    }
     const normal = loadSyntheticMain();
     await normal.main();
     assert.strictEqual(normal.counts.launches, 1);
@@ -168,15 +169,20 @@ function loadSyntheticMain(scenario = {}) {
     }
     for (const navigationError of ['net::ERR_CONNECTION_REFUSED', 'net::ERR_TUNNEL_CONNECTION_FAILED',
         'net::ERR_PROXY_CONNECTION_FAILED']) {
-        const fallback = loadSyntheticMain({ navigationError });
-        await fallback.main();
-        assert.strictEqual(fallback.counts.launches, 2);
-        assert.strictEqual(fallback.counts.logins, 1);
-        assert.strictEqual(fallback.counts.writes, 1);
+        const direct = loadSyntheticMain({ navigationError, retiredProxyEnv: true });
+        await assert.rejects(direct.main(), new RegExp(navigationError));
+        assert.strictEqual(direct.counts.launches, 1);
+        assert.strictEqual(direct.counts.logins, 0);
+        assert.strictEqual(direct.counts.writes, 0);
     }
     const exhausted = loadSyntheticMain({ navigationError: 'net::ERR_PROXY_CONNECTION_FAILED', alwaysFail: true });
     await assert.rejects(exhausted.main());
-    assert.strictEqual(exhausted.counts.launches, 2);
+    assert.strictEqual(exhausted.counts.launches, 1);
     assert.strictEqual(exhausted.counts.fills, 0);
+    const retired = loadSyntheticMain({ retiredProxyEnv: true });
+    await retired.main();
+    await retired.exchange('synthetic-code');
+    assert.strictEqual(retired.counts.launches, 1);
+    assert.strictEqual(retired.counts.writes, 1);
     console.log('schwab auth classification and synthetic caller checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
