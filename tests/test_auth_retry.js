@@ -79,6 +79,7 @@ function loadSyntheticMain(scenario = {}) {
         if (name === './lib/oauth') return {
             extractAuthorizationCodeFromUrl: () => 'synthetic-code', summarizeAuthorizationCode: () => ({}),
         };
+        if (name === './lib/redact') return require('../lib/redact');
         throw new Error(`UNEXPECTED_MODULE: ${name}`);
     };
     fakeRequire.main = {};
