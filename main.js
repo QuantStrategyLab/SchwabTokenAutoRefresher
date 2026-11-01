@@ -21,6 +21,10 @@ const {
     extractAuthorizationCodeFromUrl,
     summarizeAuthorizationCode,
 } = require('./lib/oauth');
+const {
+    redactKnownSecrets,
+    redactSecrets,
+} = require('./lib/redact');
 
 // --- Configuration ---
 const USERNAME = process.env.SCHWAB_USERNAME;
@@ -71,24 +75,17 @@ function summarizeUrl(value) {
     }
 }
 
+const KNOWN_SECRETS = [USERNAME, PASSWORD, TOTP_SECRET, APP_KEY, APP_SECRET]
+    .filter(secret => typeof secret === 'string' && secret.length >= 4)
+    .sort((a, b) => b.length - a.length);
+
 function sanitizeError(value) {
-    return String(value ?? '').replace(/https?:\/\/[^\s"')]+/g, match => summarizeUrl(match));
-}
-
-function redactKnownSecrets(value) {
-    const secrets = [USERNAME, PASSWORD, TOTP_SECRET, APP_KEY, APP_SECRET]
-        .filter(secret => typeof secret === 'string' && secret.length >= 4)
-        .sort((a, b) => b.length - a.length);
-
-    let output = String(value ?? '');
-    secrets.forEach((secret, index) => {
-        output = output.split(secret).join(`[REDACTED_${index + 1}]`);
-    });
-    return output;
+    return redactSecrets(String(value ?? ''), KNOWN_SECRETS)
+        .replace(/https?:\/\/[^\s"')]+/g, match => summarizeUrl(match));
 }
 
 function sanitizeLogValue(value, maxLength = 1000) {
-    return redactKnownSecrets(sanitizeError(value))
+    return sanitizeError(value)
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, maxLength);
@@ -160,7 +157,7 @@ function attachPageDiagnostics(page) {
 
 async function collectPageDiagnostics(page, filename) {
     const title = await page.title().catch(() => '');
-    const bodyText = await page.locator('body').innerText({ timeout: 1500 }).catch(error => `body text unavailable: ${error.message}`);
+    const bodyText = await page.locator('body').innerText({ timeout: 1500 }).catch(error => `body text unavailable: ${sanitizeError(error.message)}`);
     const inputs = await page.locator('input').evaluateAll(elements => elements.slice(0, 40).map(element => ({
         type: element.getAttribute('type') || null,
         id: element.id || null,
@@ -169,14 +166,14 @@ async function collectPageDiagnostics(page, filename) {
         placeholder: element.getAttribute('placeholder') || null,
         disabled: element.disabled,
         visibleValueLength: element.value ? element.value.length : 0,
-    }))).catch(error => [{ error: error.message }]);
+    }))).catch(error => [{ error: sanitizeError(error.message) }]);
     const buttons = await page.locator('button').evaluateAll(elements => elements.slice(0, 40).map(element => ({
         id: element.id || null,
         name: element.getAttribute('name') || null,
         ariaLabel: element.getAttribute('aria-label') || null,
         text: (element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80),
         disabled: element.disabled,
-    }))).catch(error => [{ error: error.message }]);
+    }))).catch(error => [{ error: sanitizeError(error.message) }]);
     const diagnostics = {
         url: summarizeUrl(page.url()),
         title: sanitizeLogValue(title, 240),
@@ -186,8 +183,8 @@ async function collectPageDiagnostics(page, filename) {
         })).slice(0, 20),
         bodyTextLength: String(bodyText ?? '').length,
         bodyTextPreview: sanitizeLogValue(bodyText, 1200),
-        inputs: JSON.parse(redactKnownSecrets(JSON.stringify(inputs))),
-        buttons: JSON.parse(redactKnownSecrets(JSON.stringify(buttons))),
+        inputs: JSON.parse(redactKnownSecrets(JSON.stringify(inputs), KNOWN_SECRETS)),
+        buttons: JSON.parse(redactKnownSecrets(JSON.stringify(buttons), KNOWN_SECRETS)),
     };
 
     fs.writeFileSync(filename, `${JSON.stringify(diagnostics, null, 2)}\n`);
