@@ -33,7 +33,7 @@ function assertNotContains(output, secret, label) {
 const passwordFillError = `page.fill: Timeout 30000ms exceeded.
 Call log:
   - waiting for locator('input[name="password"]')
-    - locator resolved to <input name="password" type="password"/>
+    - locator resolved to <input name="password" type="password" value="${SYNTHETIC_PASSWORD}"/>
     - fill("${SYNTHETIC_PASSWORD}")
   - attempting fill action
     2 × waiting for element to be visible, enabled and editable
@@ -67,6 +67,49 @@ Call log:
     );
     assertNotContains(out, SYNTHETIC_PASSWORD, 'password');
     assertNotContains(out, SYNTHETIC_OTP, 'OTP');
+}
+
+{
+    // Unquoted numeric arguments (a code rendered without quotes) must be
+    // redacted too.
+    const out = redactSecrets(`locator.fill: element is not editable\n  - fill(${SYNTHETIC_OTP})`, []);
+    assertNotContains(out, SYNTHETIC_OTP, 'OTP');
+    assert.ok(out.includes('fill([REDACTED])'));
+}
+
+{
+    // Resolved-element previews carry typed values in attributes and text
+    // content; the whole preview line must be dropped.
+    const out = redactSecrets(`locator.fill: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator('#password')
+    - locator resolved to <input id="password" type="password" value="${SYNTHETIC_PASSWORD}"/>
+    - fill("${SYNTHETIC_PASSWORD}")
+  - attempting fill action`, []);
+    assertNotContains(out, SYNTHETIC_PASSWORD, 'password');
+    assert.ok(out.includes('locator preview [REDACTED]'));
+    assert.ok(out.includes('attempting fill action'), 'non-secret text must survive');
+}
+
+{
+    const out = redactSecrets(`    - locator resolved to <textarea id="note">${SYNTHETIC_PASSWORD}</textarea>`, []);
+    assertNotContains(out, SYNTHETIC_PASSWORD, 'password');
+    assert.ok(out.includes('locator preview [REDACTED]'));
+}
+
+{
+    // Strict-mode listings quote each matched element preview on its own line.
+    const out = redactSecrets(`    1) <input value="${SYNTHETIC_PASSWORD}"/> aka getByRole('textbox').first()`, []);
+    assertNotContains(out, SYNTHETIC_PASSWORD, 'password');
+    assert.ok(out.includes('locator preview [REDACTED]'));
+}
+
+{
+    // Values containing angle brackets must not break preview redaction.
+    const hostilePassword = ['pa<', 'ss>w0rd'].join('');
+    const out = redactSecrets(`  - locator resolved to <input value="${hostilePassword}"/> tail`, []);
+    assertNotContains(out, hostilePassword, 'password');
+    assert.ok(!out.includes('tail'), 'the preview line must be dropped entirely');
 }
 
 {
@@ -173,6 +216,27 @@ function loadSyntheticMain(scenario = {}) {
         if (name === 'puppeteer-extra-plugin-stealth') return () => ({});
         if (name === 'axios') return {
             async post() {
+                if (scenario.tokenResponseError) {
+                    const err = failure('token endpoint rejected the exchange');
+                    err.response = {
+                        status: 400,
+                        headers: {},
+                        data: {
+                            error: 'invalid_grant',
+                            error_description: ['code echoed ', SYNTHETIC_ACCESS_TOKEN].join(''),
+                        },
+                    };
+                    throw err;
+                }
+                if (scenario.tokenExchangeSucceeds) {
+                    return {
+                        data: {
+                            access_token: SYNTHETIC_ACCESS_TOKEN,
+                            refresh_token: SYNTHETIC_OPAQUE_TOKEN,
+                            expires_in: 1800,
+                        },
+                    };
+                }
                 const message = `token endpoint returned an error with access_token=${SYNTHETIC_ACCESS_TOKEN}`;
                 lastThrownMessages.token = message;
                 throw failure(message);
@@ -209,6 +273,7 @@ function loadSyntheticMain(scenario = {}) {
                 GCP_PROJECT_ID: 'synthetic-project',
                 GCP_SECRET_ID: 'synthetic-secret-id',
                 SCHWAB_REDIRECT_URI: 'https://127.0.0.1:8182/callback',
+                GCP_SA_KEY: scenario.gcpSaKey || undefined,
             },
             exit(code) { exitCode = code; resolveExit(); },
         },
@@ -288,6 +353,20 @@ async function awaitExit(run) {
         'scenario must be leak-shaped before sanitization');
     assertNotContains(tokenRun.capturedText(), SYNTHETIC_ACCESS_TOKEN, 'access token');
     assert.ok(tokenRun.capturedText().includes('[REDACTED'));
+
+    // Token endpoint error response echoing the access token in the body:
+    // the response body path must be sanitized before it is logged.
+    const responseRun = loadSyntheticMain({ tokenResponseError: true });
+    await awaitExit(responseRun);
+    assertNotContains(responseRun.capturedText(), SYNTHETIC_ACCESS_TOKEN, 'access token');
+    assert.ok(responseRun.capturedText().includes('[REDACTED'));
+
+    // Invalid GCP_SA_KEY: the JSON parse error message can embed a fragment
+    // of the key and must not be echoed into the failure log.
+    const gcpRun = loadSyntheticMain({ tokenExchangeSucceeds: true, gcpSaKey: 'not json' });
+    await awaitExit(gcpRun);
+    assert.ok(gcpRun.capturedText().includes('GCP_SA_KEY is not valid JSON'));
+    assertNotContains(gcpRun.capturedText(), 'not json', 'GCP_SA_KEY fragment');
 
     console.log('secret redaction checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
