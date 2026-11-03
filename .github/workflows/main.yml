@@ -5,14 +5,6 @@ on:
     - cron: '0 13 */3 * *'
   workflow_dispatch:
     inputs:
-      proxy_mode:
-        description: 'Optional Schwab primary mode for manual runs'
-        required: true
-        default: direct
-        type: choice
-        options:
-          - direct
-          - proxy
       upload_debug_artifacts:
         description: 'Upload redacted diagnostics on failure for this manual run'
         required: true
@@ -35,25 +27,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0 
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '20'
-
-      - name: Resolve Schwab primary mode
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.proxy_mode }}" = "proxy" ]; then
-            printf 'SCHWAB_FORCE_PROXY_FIRST=true\n' >> "$GITHUB_ENV"
-            echo "Resolved Schwab primary mode: proxy-first"
-          else
-            printf 'SCHWAB_FORCE_PROXY_FIRST=false\n' >> "$GITHUB_ENV"
-            echo "Resolved Schwab primary mode: direct-first"
-          fi
 
       - name: Install Pinned Google Chrome & Dependencies
         run: |
@@ -65,11 +46,11 @@ jobs:
           google-chrome --version
           npm ci
 
+      # SCHWAB_PROXY_URL retired on 2026-11-02; keep the secret, but do not read it.
       - name: Run Refresh Script
         run: npm start
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-          SCHWAB_PROXY_URL: ${{ secrets.SCHWAB_PROXY_URL }}
           SCHWAB_USERNAME: ${{ secrets.SCHWAB_USERNAME }}
           SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}
           SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}
@@ -78,6 +59,13 @@ jobs:
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID }}
           SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}
+
+      - name: Alert refresh failure via Telegram
+        if: failure()
+        run: node scripts/notify_refresh_failure.js
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN || secrets.TG_TOKEN }}
+          GLOBAL_TELEGRAM_CHAT_ID: ${{ secrets.GLOBAL_TELEGRAM_CHAT_ID }}
 
       - name: Stage redacted diagnostics
         id: stage_diagnostics
@@ -89,13 +77,13 @@ jobs:
       - name: Scan diagnostics before upload
         id: scan_diagnostics
         if: failure() && steps.stage_diagnostics.outcome == 'success'
-        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273
+        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273 # No release tag published
         with:
           path: publish-diagnostics
 
       - name: Upload Redacted Diagnostics
         if: failure() && steps.scan_diagnostics.outcome == 'success'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: redacted-diagnostics
           path: |
@@ -114,7 +102,7 @@ jobs:
 
       - name: Scan the log publication
         if: success()
-        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273
+        uses: QuantStrategyLab/.github/actions/scan-before-publish@0da4da68433b803cda17d3f84e29875a94a32273 # No release tag published
         with:
           path: last_run.txt
 

@@ -16,8 +16,8 @@ authenticating. It does not place orders.
 SchwabTokenAutoRefresher refreshes a Charles Schwab OAuth token on a schedule
 and writes the refreshed credentials to Google Cloud Secret Manager, so
 dependent services keep a valid token without manual renewal. It uses Playwright
-to complete the broker login, including TOTP two-factor authentication, and can
-route the login through an outbound HTTP proxy. It runs on Node.js 20.
+to complete the broker login, including TOTP two-factor authentication, over a
+direct connection only. It runs on Node.js 20.
 
 ## What this is not
 
@@ -44,7 +44,7 @@ The unit tests are plain Node scripts; they do not contact the broker:
 
 ```bash
 node tests/test_auth_retry.js
-node tests/test_proxy_config.js
+node tests/test_refresh_failure_alert.js
 node tests/test_auth_code_extraction.js
 ```
 
@@ -62,14 +62,28 @@ node tests/test_auth_code_extraction.js
 | `GCP_SECRET_ID` | Yes | none | Secret Manager secret to update. |
 | `GCP_SA_KEY` | No | ambient credentials | Service account key JSON when ambient credentials are not available. |
 | `GCP_SECRET_VERSION_RETENTION` | No | `1` | Number of secret versions to keep; older versions are permanently destroyed and cannot be restored. |
-| `SCHWAB_PROXY_URL` | No | none | HTTP proxy for the login flow. |
-| `SCHWAB_FORCE_PROXY_FIRST` | No | disabled | Use the proxy before a direct connection when set to `true`. |
+| `TELEGRAM_TOKEN` | For workflow alerts | `TG_TOKEN` | Unified Telegram bot token (QSL 资产管家 bot). |
+| `GLOBAL_TELEGRAM_CHAT_ID` | For workflow alerts | none | Alert chat IDs, separated by commas, semicolons, or whitespace. |
+
+The workflow makes one direct refresh attempt. On failure it sends a Telegram
+alert with the workflow run link, then leaves the job failed. Alert delivery
+errors or missing bot configuration also fail the alert step. No refresh errors,
+credentials, or token responses are included in the message.
+
+Configure `TELEGRAM_TOKEN` (or the existing `TG_TOKEN`) and
+`GLOBAL_TELEGRAM_CHAT_ID` as GitHub Actions secrets for the unified bot.
+Tests use simulated requests and do not send real alerts.
+
+Automatic proxy fallback and manual `proxy_mode` were retired on 2026-11-02.
+The existing `SCHWAB_PROXY_URL` secret is retained but is no longer read.
+`SCHWAB_FORCE_PROXY_FIRST` is ignored. Both browser login and token exchange
+connect directly, including when standard proxy environment variables are set.
 
 ## Repository layout
 
 ```
 main.js     scheduled refresh entrypoint
-lib/        proxy, OAuth, and retry helpers
+lib/        OAuth and login rejection helpers
 tests/      unit tests (use installed dependencies)
 prompts/    review prompt text
 scripts/    operator helpers
