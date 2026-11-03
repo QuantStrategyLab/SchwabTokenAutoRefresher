@@ -13,6 +13,7 @@ const {
     summarizeAuthorizationCode,
 } = require('./lib/oauth');
 const {
+    redactBrowserDiagnostic,
     redactKnownSecrets,
     redactSecrets,
 } = require('./lib/redact');
@@ -111,11 +112,11 @@ function attachPageDiagnostics(page) {
         if (type !== 'error' && type !== 'warning') {
             return;
         }
-        console.log(`Browser console ${type}: ${sanitizeLogValue(msg.text())}`);
+        console.log(`Browser console ${type}: ${redactBrowserDiagnostic()}`);
     });
 
-    page.on('pageerror', error => {
-        console.log(`Browser page error: ${sanitizeLogValue(error.message)}`);
+    page.on('pageerror', () => {
+        console.log(`Browser page error: ${redactBrowserDiagnostic()}`);
     });
 
     page.on('requestfailed', request => {

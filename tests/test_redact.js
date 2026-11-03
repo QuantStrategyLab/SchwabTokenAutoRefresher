@@ -401,3 +401,98 @@ async function awaitExit(run) {
 
     console.log('secret redaction checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+// Real browser event sinks; synthetic inputs only.
+(() => {
+    'use strict';
+    const assert = require('assert');
+    // Offline review probes. All inputs are invented; values are never printed.
+    const fs = require('fs');
+    const path = require('path');
+    const vm = require('vm');
+    const { createRequire } = require('module');
+    const { EventEmitter } = require('events');
+    const root = path.resolve(__dirname, '..');
+    const localRequire = createRequire(path.join(root, 'main.js'));
+    const captured = [];
+    const fakePassword = ['fake-', 'p"a\\s', 's-end'].join('');
+    const fakeEnv = {
+        SCHWAB_USERNAME: 'fake-user', SCHWAB_PASSWORD: fakePassword,
+        SCHWAB_TOTP_SECRET: 'fake-seed', SCHWAB_API_KEY: 'fake-key',
+        SCHWAB_APP_SECRET: 'fake-app-secret',
+    };
+    function fakeRequire(name) {
+        if (name === 'playwright-extra') return { chromium: { use() {} } };
+        if (name === 'puppeteer-extra-plugin-stealth') return () => ({});
+        if (name === 'axios') return {};
+        if (name === 'otpauth') return {};
+        if (name === '@google-cloud/secret-manager') return {};
+        return localRequire(name);
+    }
+    fakeRequire.main = {};
+    const context = vm.createContext({
+        require: fakeRequire, module: {}, __dirname: root,
+        process: { env: fakeEnv }, URL, URLSearchParams, Buffer, setTimeout,
+        console: { log: (...args) => captured.push(args.map(String).join(' ')) },
+    });
+    vm.runInContext(fs.readFileSync(path.join(root, 'main.js'), 'utf8'), context);
+    const attach = vm.runInContext('attachPageDiagnostics', context);
+    const page = new EventEmitter();
+    attach(page);
+    const cases = [];
+    function probe(name, value, needle, sink = 'console', expectLeak = true) {
+        captured.length = 0;
+        if (sink === 'console') page.emit('console', { type: () => 'error', text: () => value });
+        else page.emit('pageerror', new Error(value));
+        const expected = sink === 'console' ? 'Browser console error: [REDACTED]' : 'Browser page error: [REDACTED]';
+        const leaked = captured.length !== 1 || captured[0] !== expected ||
+        captured.some(line => line.includes(needle));
+        cases.push({ name, sink, expected: expectLeak ? 'redaction-required' : 'protected-control',
+            result: leaked ? 'LEAK' : 'REDACTED', assertion_passed: !leaked });
+    }
+    const cookie = ['fake-cookie-', 'abc123'].join('');
+    probe('cookie-header-console', `Cookie: session=${cookie}`, cookie);
+    probe('set-cookie-pageerror', `Set-Cookie: session=${cookie}; Secure; HttpOnly`, cookie, 'pageerror');
+    const token = ['fakeA123', 'fakeB456', 'fakeC789', 'fakeD012', 'fakeE345'].join('/');
+    probe('base64_value_console', `access_token=${token}`, token);
+    probe('base64_value_pageerror', `refresh_token=${token}`, token, 'pageerror');
+    probe('escaped-password-console', JSON.stringify(Object.fromEntries([['password', fakePassword]])),
+        JSON.stringify(fakePassword).slice(1, -1));
+    probe('known-password-control', `failure: ${fakePassword}`, fakePassword, 'pageerror', false);
+    probe('otp-fill-control', 'locator.fill: failed\n - fill("123456")', '123456', 'pageerror', false);
+    const longToken = ['fake', 'a'.repeat(40)].join('');
+    probe('long_value_control', `access_token=${longToken}`, longToken, 'console', false);
+    // Exercise both sinks with encodings that a finite replacement list cannot
+    // cover, and with token values outside the old length/alphabet assumptions.
+    for (const sink of ['console', 'pageerror']) {
+        for (const [encoding, encoded] of [
+            ['json', JSON.stringify(fakePassword).slice(1, -1)],
+            ['nested-json', JSON.stringify(JSON.stringify(fakePassword))],
+            ['uri', encodeURIComponent(fakePassword)],
+            ['base64', Buffer.from(fakePassword).toString('base64')],
+            ['html', [...fakePassword].map(c => `&#${c.charCodeAt(0)};`).join('')],
+        ]) {
+            probe(`${encoding}-password-${sink}`, `diagnostic ${encoded}`, encoded, sink);
+        }
+        for (const credential of ['x', 'a/b+=', 'a b;c:d', '雪']) {
+            probe(`arbitrary-credential-${sink}`, `Cookie: session=${credential}\naccess_token=${credential}`,
+                credential, sink);
+        }
+    }
+    // The handlers must not read payload accessors at all, including errors whose
+    // message getter fails. Logging fixed markers remains safe in those cases.
+    page.emit('console', { type: () => 'warning', text() { throw new Error('unexpected payload read'); } });
+    page.emit('pageerror', { get message() { throw new Error('unexpected payload read'); } });
+    assert.ok(captured.includes('Browser console warning: [REDACTED]'));
+    assert.ok(captured.includes('Browser page error: [REDACTED]'));
+    captured.length = 0;
+    page.emit('console', { type: () => 'log', text() { throw new Error('unexpected payload read'); } });
+    assert.strictEqual(captured.length, 0, 'non-warning/error console events remain ignored');
+
+    const result = {
+        cases, missing_redaction: cases.filter(x => !x.assertion_passed).length,
+        protected_controls: cases.filter(x => x.expected === 'protected-control' && x.assertion_passed).length,
+    };
+    console.log(`browser diagnostic sink probes: ${cases.length - result.missing_redaction}/${cases.length} passed`);
+    assert.strictEqual(result.missing_redaction, 0, 'browser diagnostic privacy assertions failed');
+})();
