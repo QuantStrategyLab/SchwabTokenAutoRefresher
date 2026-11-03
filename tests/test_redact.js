@@ -11,7 +11,7 @@ const {
 // are never printed. Each assertion failure reports "leaked a synthetic
 // secret" instead of the value itself. Secret-shaped values are assembled
 // from segments at runtime so secret scanners do not flag the file.
-const SYNTHETIC_PASSWORD = ['SyntheticP', '@', 'ssw0rd', '-', '98f2'].join('');
+const SYNTHETIC_PASSWORD = ['test-only', String.fromCharCode(64), 'password', 1234].join('');
 const SYNTHETIC_OTP = '482913';
 const SYNTHETIC_TOTP_SEED = ['JBSWY3', 'DPEHPK', '3PXP'].join('');
 // Assembled from segments so the file contains no JWT-shaped literal that a
@@ -21,8 +21,7 @@ const SYNTHETIC_ACCESS_TOKEN = [
     'eyJzdWIiOiJzeW50aGV0aWMiLCJleHAiOjQ4MjA5MzEwMDB9',
     'c3ludGhldGljLXNpZ25hdHVyZS1mb3ItdGVzdHM',
 ].join('.');
-const SYNTHETIC_OPAQUE_TOKEN = ['opaqueSyntheticToken',
-    '4b1d7c3e', '9f2a8b6d', '5c4e3f2a', '1b0c9d8e'].join('_');
+const SYNTHETIC_OPAQUE_TOKEN = ['test-only', 'opaque', 'not-a-credential'].join('_').repeat(2);
 
 function assertNotContains(output, secret, label) {
     assert.ok(!String(output).includes(secret), `leaked a synthetic ${label}`);
@@ -415,7 +414,7 @@ async function awaitExit(run) {
     const root = path.resolve(__dirname, '..');
     const localRequire = createRequire(path.join(root, 'main.js'));
     const captured = [];
-    const fakePassword = ['fake-', 'p"a\\s', 's-end'].join('');
+    const fakePassword = ['test-only', String.fromCharCode(34, 92), 'password'].join('');
     const fakeEnv = {
         SCHWAB_USERNAME: 'fake-user', SCHWAB_PASSWORD: fakePassword,
         SCHWAB_TOTP_SECRET: 'fake-seed', SCHWAB_API_KEY: 'fake-key',
