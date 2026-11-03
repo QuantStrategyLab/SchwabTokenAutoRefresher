@@ -7,16 +7,7 @@ const { TOTP } = require('otpauth');
 const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
 const path = require('path');
 const fs = require('fs');
-const {
-    buildAxiosProxyConfig,
-    buildPlaywrightProxy,
-    maskProxyForLogs,
-    resolveProxyUrl,
-} = require('./lib/proxy');
-const {
-    isRetryableWithProxy,
-    looksLikeCredentialOrRiskBanner,
-} = require('./lib/auth_retry');
+const { looksLikeCredentialOrRiskBanner } = require('./lib/auth_retry');
 const {
     extractAuthorizationCodeFromUrl,
     summarizeAuthorizationCode,
@@ -55,8 +46,7 @@ const DELAYS = {
 const VIEWPORT = { width: 1280, height: 800 };
 const TOTP_PERIOD_SECONDS = 30;
 const TOTP_MIN_VALIDITY_SECONDS = 20;
-const FORCE_PROXY_FIRST = String(process.env.SCHWAB_FORCE_PROXY_FIRST || '').toLowerCase() === 'true';
-const FALLBACK_PROXY_URL = resolveProxyUrl(process.env);
+// SCHWAB_PROXY_URL and manual proxy mode retired on 2026-11-02; keep the secret untouched.
 const SECRET_VERSION_RETENTION = Math.max(
     1,
     Number.parseInt(process.env.GCP_SECRET_VERSION_RETENTION || '1', 10) || 1,
@@ -260,13 +250,7 @@ async function navigateToLoginForm(page, authUrl) {
     const passwordInput = page.getByRole('textbox', { name: /Password/i });
 
     console.log('1. Navigating to auth page...');
-    try {
-        await page.goto(authUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.AUTH_PAGE });
-    } catch (err) {
-        // Only a known initial connection failure precedes any credential entry.
-        err.retryBeforeCredentialEntry = isRetryableWithProxy(err.message, true);
-        throw err;
-    }
+    await page.goto(authUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.AUTH_PAGE });
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await humanDelay(DELAYS.CREDENTIAL_ENTRY.min, DELAYS.CREDENTIAL_ENTRY.max);
     await loginInput.waitFor({ state: 'visible', timeout: TIMEOUTS.LOGIN_FORM });
@@ -391,7 +375,7 @@ async function cleanupSecretVersions(client, parent, newVersionName) {
     console.log(`Secret Manager cleanup retained ${retained.size} version(s), destroyed ${destroyed}.`);
 }
 
-async function exchangeCodeForToken(code, proxyUrl) {
+async function exchangeCodeForToken(code) {
     const credentials = Buffer.from(`${APP_KEY}:${APP_SECRET}`).toString('base64');
     const params = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI });
     console.log(`Submitting token exchange with code summary: ${JSON.stringify(summarizeAuthorizationCode(code))}`);
@@ -399,7 +383,7 @@ async function exchangeCodeForToken(code, proxyUrl) {
         const response = await axios.post('https://api.schwabapi.com/v1/oauth/token', params.toString(), {
             headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/x-www-form-urlencoded' },
             timeout: 30000,
-            ...buildAxiosProxyConfig(proxyUrl),
+            proxy: false,
         });
         const data = response.data;
         if (!data.access_token || !data.refresh_token) {
@@ -429,45 +413,26 @@ async function exchangeCodeForToken(code, proxyUrl) {
     }
 }
 
-function buildAttemptPlan() {
-    if (FORCE_PROXY_FIRST) {
-        return [
-            { label: 'proxy', proxyUrl: FALLBACK_PROXY_URL },
-            { label: 'direct', proxyUrl: null },
-        ];
-    }
-
-    return [
-        { label: 'direct', proxyUrl: null },
-        { label: 'proxy', proxyUrl: FALLBACK_PROXY_URL },
-    ];
-}
-
-async function runRefreshOnce({ label, modeLabel = label, proxyUrl }) {
-    const effectiveModeLabel = modeLabel || (proxyUrl ? 'proxy' : 'direct');
-    console.log(`Starting Chrome OAuth task on GitHub Hosted Runner (${effectiveModeLabel})...`);
-    if (proxyUrl) {
-        console.log(`Using outbound proxy for Schwab traffic: ${maskProxyForLogs(proxyUrl)}`);
-    }
+async function runRefreshOnce() {
+    console.log('Starting Chrome OAuth task on GitHub Hosted Runner (direct)...');
     const authUrl = `https://api.schwabapi.com/v1/oauth/authorize?client_id=${APP_KEY}&redirect_uri=${REDIRECT_URI}`;
-    const userDataDir = path.resolve(__dirname, `schwab-local-session-${effectiveModeLabel}`);
+    const userDataDir = path.resolve(__dirname, 'schwab-local-session-direct');
 
     const context = await chromium.launchPersistentContext(userDataDir, {
         channel: 'chrome',
         headless: false,
         args: [
             '--no-sandbox',
+            '--no-proxy-server',
             '--disable-blink-features=AutomationControlled',
             `--window-size=${VIEWPORT.width},${VIEWPORT.height}`
         ],
         viewport: VIEWPORT,
-        ...(proxyUrl ? { proxy: buildPlaywrightProxy(proxyUrl) } : {}),
     });
 
     const page = context.pages()[0] || await context.newPage();
     attachPageDiagnostics(page);
     let interceptedCode = null;
-    let credentialsStarted = false;
 
     page.on('request', r => {
         const requestUrl = r.url();
@@ -488,8 +453,6 @@ async function runRefreshOnce({ label, modeLabel = label, proxyUrl }) {
     try {
         const { loginInput, passwordInput } = await navigateToLoginForm(page, authUrl);
         console.log("2. Entering credentials...");
-        // Filling can trigger browser-side submission; do not wait for click success.
-        credentialsStarted = true;
         await loginInput.fill(USERNAME);
         await passwordInput.fill(PASSWORD);
         await page.getByRole('button', { name: 'Log in' }).click();
@@ -540,13 +503,12 @@ async function runRefreshOnce({ label, modeLabel = label, proxyUrl }) {
         }
         if (!interceptedCode) throw new Error("Code interception failed after polling.");
 
-        const tokenDict = await exchangeCodeForToken(interceptedCode, proxyUrl);
+        const tokenDict = await exchangeCodeForToken(interceptedCode);
         tokenDict.expires_at = Math.floor(Date.now() / 1000) + tokenDict.expires_in;
         await updateAndCleanupSecrets({ creation_timestamp: Math.floor(Date.now() / 1000), token: tokenDict });
         console.log("SUCCESS! Token refreshed and synced.");
 
     } catch (err) {
-        err.retryBeforeCredentialEntry = !credentialsStarted && err.retryBeforeCredentialEntry === true;
         await saveScreenshot(page, 'last_error_state.png');
         throw err;
     } finally {
@@ -556,34 +518,8 @@ async function runRefreshOnce({ label, modeLabel = label, proxyUrl }) {
 
 async function main() {
     validateEnv();
-
-    const attemptPlan = buildAttemptPlan().filter(attempt => attempt.label !== 'proxy' || attempt.proxyUrl);
-    if (attemptPlan.length === 0) {
-        throw new Error('No Schwab proxy or direct attempt is available.');
-    }
-
-    let lastError = null;
-    for (let index = 0; index < attemptPlan.length; index += 1) {
-        const attempt = attemptPlan[index];
-        try {
-            await runRefreshOnce(attempt);
-            console.log(`Completed Schwab token refresh using ${attempt.label} mode.`);
-            return;
-        } catch (err) {
-            lastError = err;
-            const shouldRetry = index < attemptPlan.length - 1
-                && isRetryableWithProxy(err.message, err.retryBeforeCredentialEntry === true);
-            if (shouldRetry) {
-                console.log(`Retryable Schwab error on ${attempt.label} mode; trying ${attemptPlan[index + 1].label} mode next.`);
-                continue;
-            }
-            throw err;
-        }
-    }
-
-    if (lastError) {
-        throw lastError;
-    }
+    await runRefreshOnce();
+    console.log('Completed Schwab token refresh using direct mode.');
 }
 
 if (require.main === module) {
