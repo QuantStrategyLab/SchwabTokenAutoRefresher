@@ -282,7 +282,7 @@ jobs:
               // pushing onto a bot branch must not inherit the skip.
               const isDependabot = pr.user?.login === 'dependabot[bot]' && await dependabotHead(number);
               const actionFiles = isDependabot ? await eligibleActionFiles(pr.base.ref) : null;
-              await status('risk-gate', 'pending', 'Evaluating changed paths, owner approval and AI review');
+              await status('risk-gate', 'pending', 'Evaluating changed paths, clearing label and AI review');
               await status('pr-template', 'pending', 'Checking AI, change and verification fields');
               await status('ai-review', 'pending', 'Reading the Codex review receipt');
               const files = await github.paginate(github.rest.pulls.listFiles, { ...repo, pull_number: number, per_page: 100 });
@@ -338,7 +338,7 @@ jobs:
               const tierNote = !risky ? 'Low-risk paths: no owner approval needed'
                 : approval === 'owner' ? 'High-risk paths: owner-approved label verified'
                 : approval === 'agent' ? 'High-risk paths: cleared by agent-approved, NOT confirmed by the owner'
-                : 'High-risk paths: needs-owner-approval; owner must add owner-approved';
+                : 'High-risk paths: needs a clearing label; owner-approved or agent-approved';
               let gateState;
               let gateNote;
               if (!tierOK) {
