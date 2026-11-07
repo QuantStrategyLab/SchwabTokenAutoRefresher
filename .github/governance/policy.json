@@ -1,0 +1,18 @@
+{
+  "version": "pr-governance/v3",
+  "mode": "enforce",
+  "r0_paths": [
+    "README.md",
+    "CHANGELOG.md",
+    "docs/prose/"
+  ],
+  "r2_paths": [
+    "scripts/",
+    ".github/governance/",
+    ".github/scripts/",
+    "policy.schema.json",
+    "policy.default.json"
+  ],
+  "dependabot_template_exemption": true,
+  "max_evidence_age_hours": 168
+}
