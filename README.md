@@ -60,10 +60,16 @@ node tests/test_auth_code_extraction.js
 | `SCHWAB_REDIRECT_URI` | Yes | none | OAuth redirect URI registered with the application. |
 | `GCP_PROJECT_ID` | Yes | none | Google Cloud project that holds the secret. |
 | `GCP_SECRET_ID` | Yes | none | Secret Manager secret to update. |
-| `GCP_SA_KEY` | No | ambient credentials | Service account key JSON when ambient credentials are not available. |
+| `GCP_SA_KEY` | No | ambient credentials | Legacy option for local callers using a service account key. |
 | `GCP_SECRET_VERSION_RETENTION` | No | `1` | Number of secret versions to keep; older versions are permanently destroyed and cannot be restored. |
 | `TELEGRAM_TOKEN` | For workflow alerts | `TG_TOKEN` | Unified Telegram bot token (QSL 资产管家 bot). |
 | `GLOBAL_TELEGRAM_CHAT_ID` | For workflow alerts | none | Alert chat IDs, separated by commas, semicolons, or whitespace. |
+
+Set the GitHub variables `GCP_WORKLOAD_IDENTITY_PROVIDER` and
+`GCP_WORKLOAD_IDENTITY_SERVICE_ACCOUNT` for the scheduled workflow. Configure
+the provider to accept this repository's default-branch refresh workflow.
+Grant the refresh identity only the Secret Manager version permissions used by
+the workflow, on the configured destination secret.
 
 The workflow makes one direct refresh attempt. On failure it sends a Telegram
 alert with the workflow run link, then leaves the job failed. Alert delivery

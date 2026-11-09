@@ -7,7 +7,14 @@ workflow_file="$repo_dir/.github/workflows/main.yml"
 grep -Fq 'GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}' "$workflow_file"
 grep -Fq 'GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID }}' "$workflow_file"
 grep -Fq 'SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}' "$workflow_file"
-grep -Fq 'GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}' "$workflow_file"
+grep -Fq 'id-token: write' "$workflow_file"
+grep -Fq 'workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}' "$workflow_file"
+grep -Fq 'service_account: ${{ vars.GCP_WORKLOAD_IDENTITY_SERVICE_ACCOUNT }}' "$workflow_file"
+grep -Fq 'github.ref_name == github.event.repository.default_branch' "$workflow_file"
+if grep -Fq 'GCP_SA_KEY' "$workflow_file"; then
+  echo "workflow must use federated Google credentials" >&2
+  exit 1
+fi
 grep -Fq 'TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN || secrets.TG_TOKEN }}' "$workflow_file"
 grep -Fq 'GLOBAL_TELEGRAM_CHAT_ID: ${{ secrets.GLOBAL_TELEGRAM_CHAT_ID }}' "$workflow_file"
 grep -Fq 'run: node scripts/notify_refresh_failure.js' "$workflow_file"
