@@ -51,10 +51,11 @@ jobs:
       statuses: write
     steps:
       - name: Record label head
-        uses: QuantStrategyLab/.github/pr-governance@91252f55364c2e1f555cc42111a1897b47ce52fd
+        uses: QuantStrategyLab/.github/pr-governance@eec647dfa42e27f2caa0dc0e0ba289155488fe86
         env:
           GOVERNANCE_OWNER_ID: ${{ vars.RISK_GATE_OWNER_ID }}
           GOVERNANCE_OWNER_LOGIN: ${{ vars.RISK_GATE_OWNER }}
+          GOVERNANCE_REVIEWERS_JSON: ${{ vars.GOVERNANCE_REVIEWERS_JSON }}
         with:
           mode: gate
           record-label: 'true'
@@ -84,10 +85,11 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Evaluate
-        uses: QuantStrategyLab/.github/pr-governance@91252f55364c2e1f555cc42111a1897b47ce52fd
+        uses: QuantStrategyLab/.github/pr-governance@eec647dfa42e27f2caa0dc0e0ba289155488fe86
         env:
           GOVERNANCE_OWNER_ID: ${{ vars.RISK_GATE_OWNER_ID }}
           GOVERNANCE_OWNER_LOGIN: ${{ vars.RISK_GATE_OWNER }}
+          GOVERNANCE_REVIEWERS_JSON: ${{ vars.GOVERNANCE_REVIEWERS_JSON }}
           # Optional: a repository that keeps account identifiers out of public
           # source configures the reviewer here instead of in policy.json.
           GOVERNANCE_REVIEWER_APP_ID: ${{ vars.RISK_GATE_REVIEWER_APP_ID }}
