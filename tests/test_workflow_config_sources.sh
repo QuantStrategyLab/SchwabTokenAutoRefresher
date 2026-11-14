@@ -7,9 +7,22 @@ workflow_file="$repo_dir/.github/workflows/main.yml"
 grep -Fq 'GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}' "$workflow_file"
 grep -Fq 'GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID }}' "$workflow_file"
 grep -Fq 'SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}' "$workflow_file"
-grep -Fq 'GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}' "$workflow_file"
-grep -Fq 'SCHWAB_PROXY_URL: ${{ secrets.SCHWAB_PROXY_URL }}' "$workflow_file"
-grep -Fq 'SCHWAB_FORCE_PROXY_FIRST' "$workflow_file"
+grep -Fq 'id-token: write' "$workflow_file"
+grep -Fq 'workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}' "$workflow_file"
+grep -Fq 'service_account: ${{ vars.GCP_WORKLOAD_IDENTITY_SERVICE_ACCOUNT }}' "$workflow_file"
+grep -Fq 'github.ref_name == github.event.repository.default_branch' "$workflow_file"
+if grep -Fq 'GCP_SA_KEY' "$workflow_file"; then
+  echo "workflow must use federated Google credentials" >&2
+  exit 1
+fi
+grep -Fq 'TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN || secrets.TG_TOKEN }}' "$workflow_file"
+grep -Fq 'GLOBAL_TELEGRAM_CHAT_ID: ${{ secrets.GLOBAL_TELEGRAM_CHAT_ID }}' "$workflow_file"
+grep -Fq 'run: node scripts/notify_refresh_failure.js' "$workflow_file"
+
+if grep -Eq 'secrets.SCHWAB_PROXY_URL|proxy_mode:|SCHWAB_FORCE_PROXY_FIRST' "$workflow_file"; then
+  echo "workflow must not read the retired proxy secret or expose manual proxy mode" >&2
+  exit 1
+fi
 grep -Fq 'SCHWAB_USERNAME: ${{ secrets.SCHWAB_USERNAME }}' "$workflow_file"
 grep -Fq 'SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}' "$workflow_file"
 grep -Fq 'SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}' "$workflow_file"
@@ -57,10 +70,11 @@ if grep -Fq 'secrets.SCHWAB_REDIRECT_URI' "$workflow_file"; then
   exit 1
 fi
 
-if grep -Eq 'git push|git checkout -B logs' "$workflow_file"; then
+if grep -Eq 'contents: write|git push|git checkout -B logs' "$workflow_file"; then
   echo "Runtime diagnostics must not be committed to a public branch" >&2
   exit 1
 fi
 
-grep -Fq 'Scan redacted diagnostics before publication' "$workflow_file"
-grep -Fq "steps.scan-diagnostics.outcome == 'success'" "$workflow_file"
+grep -Fq 'Scan diagnostics before upload' "$workflow_file"
+grep -Fq "steps.scan_diagnostics.outcome == 'success'" "$workflow_file"
+grep -Fq '$GITHUB_STEP_SUMMARY' "$workflow_file"

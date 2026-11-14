@@ -7,20 +7,16 @@ const { TOTP } = require('otpauth');
 const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
 const path = require('path');
 const fs = require('fs');
-const {
-    buildAxiosProxyConfig,
-    buildPlaywrightProxy,
-    maskProxyForLogs,
-    resolveProxyUrl,
-} = require('./lib/proxy');
-const {
-    isRetryableWithProxy,
-    looksLikeCredentialOrRiskBanner,
-} = require('./lib/auth_retry');
+const { isLoginTemporarilyUnavailable, looksLikeCredentialOrRiskBanner } = require('./lib/auth_retry');
 const {
     extractAuthorizationCodeFromUrl,
     summarizeAuthorizationCode,
 } = require('./lib/oauth');
+const {
+    redactBrowserDiagnostic,
+    redactKnownSecrets,
+    redactSecrets,
+} = require('./lib/redact');
 
 // --- Configuration ---
 const USERNAME = process.env.SCHWAB_USERNAME;
@@ -51,8 +47,7 @@ const DELAYS = {
 const VIEWPORT = { width: 1280, height: 800 };
 const TOTP_PERIOD_SECONDS = 30;
 const TOTP_MIN_VALIDITY_SECONDS = 20;
-const FORCE_PROXY_FIRST = String(process.env.SCHWAB_FORCE_PROXY_FIRST || '').toLowerCase() === 'true';
-const FALLBACK_PROXY_URL = resolveProxyUrl(process.env);
+// SCHWAB_PROXY_URL and manual proxy mode retired on 2026-11-02; keep the secret untouched.
 const SECRET_VERSION_RETENTION = Math.max(
     1,
     Number.parseInt(process.env.GCP_SECRET_VERSION_RETENTION || '1', 10) || 1,
@@ -71,24 +66,17 @@ function summarizeUrl(value) {
     }
 }
 
+const KNOWN_SECRETS = [USERNAME, PASSWORD, TOTP_SECRET, APP_KEY, APP_SECRET]
+    .filter(secret => typeof secret === 'string' && secret.length >= 4)
+    .sort((a, b) => b.length - a.length);
+
 function sanitizeError(value) {
-    return String(value ?? '').replace(/https?:\/\/[^\s"')]+/g, match => summarizeUrl(match));
-}
-
-function redactKnownSecrets(value) {
-    const secrets = [USERNAME, PASSWORD, TOTP_SECRET, APP_KEY, APP_SECRET]
-        .filter(secret => typeof secret === 'string' && secret.length >= 4)
-        .sort((a, b) => b.length - a.length);
-
-    let output = String(value ?? '');
-    secrets.forEach((secret, index) => {
-        output = output.split(secret).join(`[REDACTED_${index + 1}]`);
-    });
-    return output;
+    return redactSecrets(String(value ?? ''), KNOWN_SECRETS)
+        .replace(/https?:\/\/[^\s"')]+/g, match => summarizeUrl(match));
 }
 
 function sanitizeLogValue(value, maxLength = 1000) {
-    return redactKnownSecrets(sanitizeError(value))
+    return sanitizeError(value)
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, maxLength);
@@ -124,11 +112,11 @@ function attachPageDiagnostics(page) {
         if (type !== 'error' && type !== 'warning') {
             return;
         }
-        console.log(`Browser console ${type}: ${sanitizeLogValue(msg.text())}`);
+        console.log(`Browser console ${type}: ${redactBrowserDiagnostic()}`);
     });
 
-    page.on('pageerror', error => {
-        console.log(`Browser page error: ${sanitizeLogValue(error.message)}`);
+    page.on('pageerror', () => {
+        console.log(`Browser page error: ${redactBrowserDiagnostic()}`);
     });
 
     page.on('requestfailed', request => {
@@ -160,7 +148,7 @@ function attachPageDiagnostics(page) {
 
 async function collectPageDiagnostics(page, filename) {
     const title = await page.title().catch(() => '');
-    const bodyText = await page.locator('body').innerText({ timeout: 1500 }).catch(error => `body text unavailable: ${error.message}`);
+    const bodyText = await page.locator('body').innerText({ timeout: 1500 }).catch(error => `body text unavailable: ${sanitizeError(error.message)}`);
     const inputs = await page.locator('input').evaluateAll(elements => elements.slice(0, 40).map(element => ({
         type: element.getAttribute('type') || null,
         id: element.id || null,
@@ -169,14 +157,14 @@ async function collectPageDiagnostics(page, filename) {
         placeholder: element.getAttribute('placeholder') || null,
         disabled: element.disabled,
         visibleValueLength: element.value ? element.value.length : 0,
-    }))).catch(error => [{ error: error.message }]);
+    }))).catch(error => [{ error: sanitizeError(error.message) }]);
     const buttons = await page.locator('button').evaluateAll(elements => elements.slice(0, 40).map(element => ({
         id: element.id || null,
         name: element.getAttribute('name') || null,
         ariaLabel: element.getAttribute('aria-label') || null,
         text: (element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80),
         disabled: element.disabled,
-    }))).catch(error => [{ error: error.message }]);
+    }))).catch(error => [{ error: sanitizeError(error.message) }]);
     const diagnostics = {
         url: summarizeUrl(page.url()),
         title: sanitizeLogValue(title, 240),
@@ -186,8 +174,8 @@ async function collectPageDiagnostics(page, filename) {
         })).slice(0, 20),
         bodyTextLength: String(bodyText ?? '').length,
         bodyTextPreview: sanitizeLogValue(bodyText, 1200),
-        inputs: JSON.parse(redactKnownSecrets(JSON.stringify(inputs))),
-        buttons: JSON.parse(redactKnownSecrets(JSON.stringify(buttons))),
+        inputs: JSON.parse(redactKnownSecrets(JSON.stringify(inputs), KNOWN_SECRETS)),
+        buttons: JSON.parse(redactKnownSecrets(JSON.stringify(buttons), KNOWN_SECRETS)),
     };
 
     fs.writeFileSync(filename, `${JSON.stringify(diagnostics, null, 2)}\n`);
@@ -263,13 +251,7 @@ async function navigateToLoginForm(page, authUrl) {
     const passwordInput = page.getByRole('textbox', { name: /Password/i });
 
     console.log('1. Navigating to auth page...');
-    try {
-        await page.goto(authUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.AUTH_PAGE });
-    } catch (err) {
-        // Only a known initial connection failure precedes any credential entry.
-        err.retryBeforeCredentialEntry = isRetryableWithProxy(err.message, true);
-        throw err;
-    }
+    await page.goto(authUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.AUTH_PAGE });
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await humanDelay(DELAYS.CREDENTIAL_ENTRY.min, DELAYS.CREDENTIAL_ENTRY.max);
     await loginInput.waitFor({ state: 'visible', timeout: TIMEOUTS.LOGIN_FORM });
@@ -277,13 +259,14 @@ async function navigateToLoginForm(page, authUrl) {
     return { loginInput, passwordInput };
 }
 
-async function detectLoginPageRejection(page) {
+async function checkLoginPage(page) {
     const bodyText = await page.locator('body').innerText({ timeout: 2000 }).catch(() => '');
-    if (looksLikeCredentialOrRiskBanner(bodyText)) {
-        return bodyText;
+    if (isLoginTemporarilyUnavailable(bodyText)) {
+        throw new Error('Schwab login temporarily unavailable.');
     }
-
-    return null;
+    if (looksLikeCredentialOrRiskBanner(bodyText)) {
+        throw new Error(`Login page rejected credentials or flagged risk: ${sanitizeError(bodyText)}`);
+    }
 }
 
 async function waitForFirstVisible(candidates, timeout, description) {
@@ -349,7 +332,9 @@ async function updateAndCleanupSecrets(tokenData) {
         try {
             options.credentials = JSON.parse(process.env.GCP_SA_KEY);
         } catch (e) {
-            throw new Error(`GCP_SA_KEY is not valid JSON: ${e.message}`);
+            // JSON.parse errors can embed a fragment of the input, which is
+            // a credential here; never echo the parse message.
+            throw new Error('GCP_SA_KEY is not valid JSON');
         }
     }
     const client = new SecretManagerServiceClient(options);
@@ -392,7 +377,7 @@ async function cleanupSecretVersions(client, parent, newVersionName) {
     console.log(`Secret Manager cleanup retained ${retained.size} version(s), destroyed ${destroyed}.`);
 }
 
-async function exchangeCodeForToken(code, proxyUrl) {
+async function exchangeCodeForToken(code) {
     const credentials = Buffer.from(`${APP_KEY}:${APP_SECRET}`).toString('base64');
     const params = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI });
     console.log(`Submitting token exchange with code summary: ${JSON.stringify(summarizeAuthorizationCode(code))}`);
@@ -400,7 +385,7 @@ async function exchangeCodeForToken(code, proxyUrl) {
         const response = await axios.post('https://api.schwabapi.com/v1/oauth/token', params.toString(), {
             headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/x-www-form-urlencoded' },
             timeout: 30000,
-            ...buildAxiosProxyConfig(proxyUrl),
+            proxy: false,
         });
         const data = response.data;
         if (!data.access_token || !data.refresh_token) {
@@ -414,7 +399,9 @@ async function exchangeCodeForToken(code, proxyUrl) {
                 ? err.response.data
                 : JSON.stringify(err.response.data);
             throw new Error(`Token exchange failed: ${err.response.status} ${JSON.stringify({
-                body: responseData.slice(0, 300),
+                // Response bodies can echo arbitrary credentials, including
+                // escaped values or tokens crossing a preview boundary.
+                body: '[REDACTED]',
                 bodyLength: responseData.length,
                 headers: {
                     contentType: responseHeaders['content-type'] || null,
@@ -424,49 +411,30 @@ async function exchangeCodeForToken(code, proxyUrl) {
                 },
             })}`);
         }
-        throw new Error(`Token exchange network error: ${err.message}`);
+        throw new Error(`Token exchange network error: ${sanitizeError(err.message)}`);
     }
 }
 
-function buildAttemptPlan() {
-    if (FORCE_PROXY_FIRST) {
-        return [
-            { label: 'proxy', proxyUrl: FALLBACK_PROXY_URL },
-            { label: 'direct', proxyUrl: null },
-        ];
-    }
-
-    return [
-        { label: 'direct', proxyUrl: null },
-        { label: 'proxy', proxyUrl: FALLBACK_PROXY_URL },
-    ];
-}
-
-async function runRefreshOnce({ label, modeLabel = label, proxyUrl }) {
-    const effectiveModeLabel = modeLabel || (proxyUrl ? 'proxy' : 'direct');
-    console.log(`Starting Chrome OAuth task on GitHub Hosted Runner (${effectiveModeLabel})...`);
-    if (proxyUrl) {
-        console.log(`Using outbound proxy for Schwab traffic: ${maskProxyForLogs(proxyUrl)}`);
-    }
+async function runRefreshOnce() {
+    console.log('Starting Chrome OAuth task on GitHub Hosted Runner (direct)...');
     const authUrl = `https://api.schwabapi.com/v1/oauth/authorize?client_id=${APP_KEY}&redirect_uri=${REDIRECT_URI}`;
-    const userDataDir = path.resolve(__dirname, `schwab-local-session-${effectiveModeLabel}`);
+    const userDataDir = path.resolve(__dirname, 'schwab-local-session-direct');
 
     const context = await chromium.launchPersistentContext(userDataDir, {
         channel: 'chrome',
         headless: false,
         args: [
             '--no-sandbox',
+            '--no-proxy-server',
             '--disable-blink-features=AutomationControlled',
             `--window-size=${VIEWPORT.width},${VIEWPORT.height}`
         ],
         viewport: VIEWPORT,
-        ...(proxyUrl ? { proxy: buildPlaywrightProxy(proxyUrl) } : {}),
     });
 
     const page = context.pages()[0] || await context.newPage();
     attachPageDiagnostics(page);
     let interceptedCode = null;
-    let credentialsStarted = false;
 
     page.on('request', r => {
         const requestUrl = r.url();
@@ -487,17 +455,12 @@ async function runRefreshOnce({ label, modeLabel = label, proxyUrl }) {
     try {
         const { loginInput, passwordInput } = await navigateToLoginForm(page, authUrl);
         console.log("2. Entering credentials...");
-        // Filling can trigger browser-side submission; do not wait for click success.
-        credentialsStarted = true;
         await loginInput.fill(USERNAME);
         await passwordInput.fill(PASSWORD);
         await page.getByRole('button', { name: 'Log in' }).click();
         await page.waitForTimeout(3000);
 
-        const rejectionText = await detectLoginPageRejection(page);
-        if (rejectionText) {
-            throw new Error(`Login page rejected credentials or flagged risk: ${sanitizeError(rejectionText)}`);
-        }
+        await checkLoginPage(page);
 
         console.log("3. Processing 2FA code...");
         try {
@@ -509,6 +472,9 @@ async function runRefreshOnce({ label, modeLabel = label, proxyUrl }) {
             const rejectionText = [diagnostics.title, diagnostics.bodyTextPreview, bodyText]
                 .filter(Boolean)
                 .join(' ');
+            if (isLoginTemporarilyUnavailable(rejectionText)) {
+                throw new Error('Schwab login temporarily unavailable.');
+            }
             if (looksLikeCredentialOrRiskBanner(rejectionText)) {
                 throw new Error(`Login page rejected credentials or flagged risk during 2FA step: ${sanitizeError(rejectionText)}`);
             }
@@ -539,13 +505,12 @@ async function runRefreshOnce({ label, modeLabel = label, proxyUrl }) {
         }
         if (!interceptedCode) throw new Error("Code interception failed after polling.");
 
-        const tokenDict = await exchangeCodeForToken(interceptedCode, proxyUrl);
+        const tokenDict = await exchangeCodeForToken(interceptedCode);
         tokenDict.expires_at = Math.floor(Date.now() / 1000) + tokenDict.expires_in;
         await updateAndCleanupSecrets({ creation_timestamp: Math.floor(Date.now() / 1000), token: tokenDict });
         console.log("SUCCESS! Token refreshed and synced.");
 
     } catch (err) {
-        err.retryBeforeCredentialEntry = !credentialsStarted && err.retryBeforeCredentialEntry === true;
         await saveScreenshot(page, 'last_error_state.png');
         throw err;
     } finally {
@@ -555,34 +520,8 @@ async function runRefreshOnce({ label, modeLabel = label, proxyUrl }) {
 
 async function main() {
     validateEnv();
-
-    const attemptPlan = buildAttemptPlan().filter(attempt => attempt.label !== 'proxy' || attempt.proxyUrl);
-    if (attemptPlan.length === 0) {
-        throw new Error('No Schwab proxy or direct attempt is available.');
-    }
-
-    let lastError = null;
-    for (let index = 0; index < attemptPlan.length; index += 1) {
-        const attempt = attemptPlan[index];
-        try {
-            await runRefreshOnce(attempt);
-            console.log(`Completed Schwab token refresh using ${attempt.label} mode.`);
-            return;
-        } catch (err) {
-            lastError = err;
-            const shouldRetry = index < attemptPlan.length - 1
-                && isRetryableWithProxy(err.message, err.retryBeforeCredentialEntry === true);
-            if (shouldRetry) {
-                console.log(`Retryable Schwab error on ${attempt.label} mode; trying ${attemptPlan[index + 1].label} mode next.`);
-                continue;
-            }
-            throw err;
-        }
-    }
-
-    if (lastError) {
-        throw lastError;
-    }
+    await runRefreshOnce();
+    console.log('Completed Schwab token refresh using direct mode.');
 }
 
 if (require.main === module) {

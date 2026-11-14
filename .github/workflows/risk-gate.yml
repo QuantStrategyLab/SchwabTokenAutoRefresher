@@ -1,8 +1,26 @@
 name: PR risk gate
 
+# Copy to .github/workflows/risk-gate.yml and replace QuantStrategyLab/.github with
+# the organization's governance repository (for example Pigbibi/governance).
+# The job names in this file are the required status check contexts; keep them.
+
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize, edited, labeled, unlabeled, ready_for_review]
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled, ready_for_review, closed]
+  issue_comment:
+    types: [created, edited, deleted]
+  # A review or inline comment on a fork or Dependabot pull request gets a
+  # read-only token, so those events are relayed through the permissionless
+  # `PR review signal` workflow and evaluated by this trusted run.
+  workflow_run:
+    workflows: ["PR review signal"]
+    types: [completed]
+  push:
+    branches: [main, master]
+  # A merge made with GITHUB_TOKEN raises no push, and nothing raises an event
+  # for a resolved review thread, so a sweep closes both gaps.
+  schedule:
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
       pr_number:
@@ -10,90 +28,73 @@ on:
         required: true
         type: string
 
-# No checkout, PR code execution, secret access, label writes or merge permission.
+# The gate reads metadata only. It never checks out or runs pull request code.
 permissions:
   contents: read
   pull-requests: read
   issues: read
   statuses: write
-
-concurrency:
-  group: risk-gate-${{ github.event.pull_request.number || inputs.pr_number }}
-  cancel-in-progress: true
+  actions: write
 
 jobs:
-  evaluate:
-    name: Evaluate PR governance
+  # The labeled payload is the only authenticated record of which head a
+  # clearing label was added to. Recording it in its own job keeps the evidence
+  # independent of an evaluation that a later event may supersede.
+  record_label:
+    name: Record the head a clearing label was added to
+    if: github.event_name == 'pull_request_target' && github.event.action == 'labeled'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      issues: read
+      pull-requests: read
+      statuses: write
     steps:
-      - name: Publish risk-gate and PR template checks on the PR head
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+      - name: Record label head
+        uses: QuantStrategyLab/.github/pr-governance@eec647dfa42e27f2caa0dc0e0ba289155488fe86
         env:
-          PR_NUMBER: ${{ inputs.pr_number }}
+          GOVERNANCE_OWNER_ID: ${{ vars.RISK_GATE_OWNER_ID }}
+          GOVERNANCE_OWNER_LOGIN: ${{ vars.RISK_GATE_OWNER }}
+          GOVERNANCE_REVIEWERS_JSON: ${{ vars.GOVERNANCE_REVIEWERS_JSON }}
         with:
-          script: |
-            // Executed only by the trusted base-branch workflow. Never load PR code.
-            const number = context.payload.pull_request?.number || Number(process.env.PR_NUMBER);
-            if (!Number.isSafeInteger(number) || number < 1) throw new Error('Invalid PR number');
-            const repo = context.repo;
-            const target = `${context.serverUrl}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`;
-            let sha;
-            const status = (name, state, description) => github.rest.repos.createCommitStatus({
-              ...repo, sha, context: name, state, description, target_url: target,
-            });
-            function highRisk(path) {
-              const p = path.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
-              if (p.startsWith('.github/workflows/') || /(^|\/)codeowners$/.test(p)) return true;
-              if (/(^|\/)(docs?|tests?|examples?|fixtures)(\/|$)/.test(p)) return false;
-              if (/(^|\/)\.env(?:[./_-]|$)/.test(p)) return true;
-              if (/(^|[\/_.-])(trad(?:e|es|ing)|execution|executors?|orders?|brokers?|risk|deploy(?:ment)?|secrets?|credentials?|iam|runtime|strateg(?:y|ies))([\/_.-]|$)/.test(p)) return true;
-              return /(^|\/)(dockerfile(?:\..*)?|docker-compose[^/]*|compose\.ya?ml|vercel\.json|wrangler\.(?:toml|jsonc?)|firebase\.json)$/.test(p)
-                || /\.(?:tf|tfvars)$/.test(p);
-            }
-            function completeTemplate(body) {
-              const text = (body || '').replace(/<!--[\s\S]*?-->/g, '');
-              const sections = [...text.matchAll(/^#{1,6}\s+(.+)\r?\n([\s\S]*?)(?=^#{1,6}\s|$(?![\s\S]))/gm)];
-              const present = pattern => sections.some(([, heading, content]) => pattern.test(heading)
-                && content.replace(/```[\s\S]*?```/g, '').replace(/[-*]\s*\[[ x]\]/g, '').trim().length > 3
-                && !/^\s*(?:TODO|TBD|N\/A|Describe the change.*|Which AI tool.*|List the checks.*)\s*$/i.test(content));
-              return present(/AI|模型|人工智能/i)
-                && present(/what changed|summary|problem|changes|变更|改动/i)
-                && present(/how verified|verif|validat|test(?:ing| plan)?|验证|测试/i);
-            }
-            try {
-              const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: number });
-              sha = pr.head.sha;
-              await status('risk-gate', 'pending', 'Evaluating changed paths and owner approval');
-              await status('pr-template', 'pending', 'Checking AI, change and verification fields');
-              const files = await github.paginate(github.rest.pulls.listFiles, { ...repo, pull_number: number, per_page: 100 });
-              // GitHub caps this API at 3000 files. Incomplete diffs must not pass as low risk.
-              if (files.length !== pr.changed_files || files.length >= 3000) throw new Error('Incomplete PR file list');
-              const risky = files.some(file => [file.filename, file.previous_filename].filter(Boolean).some(highRisk));
-              let approved = false;
-              if (pr.labels.some(label => label.name === 'owner-approved')) {
-                const events = await github.paginate(github.rest.issues.listEvents, { ...repo, issue_number: number, per_page: 100 });
-                const latest = events.filter(event => ['labeled', 'unlabeled'].includes(event.event)
-                  && event.label?.name === 'owner-approved').sort((a, b) => b.id - a.id)[0];
-                // A shared GitHub identity cannot distinguish the owner from their AI agents.
-                approved = latest?.event === 'labeled' && latest.actor?.login === 'Pigbibi';
-              }
-              const { data: current } = await github.rest.pulls.get({ ...repo, pull_number: number });
-              if (current.head.sha !== sha || current.body !== pr.body
-                  || JSON.stringify(current.labels.map(x => x.name).sort()) !== JSON.stringify(pr.labels.map(x => x.name).sort())) {
-                throw new Error('PR changed during evaluation; wait for the latest event');
-              }
-              const allowed = !risky || approved;
-              await status('risk-gate', allowed ? 'success' : 'failure', !risky ? 'Low-risk paths: no owner approval needed'
-                : approved ? 'High-risk paths: owner-approved label verified' : 'High-risk paths: needs-owner-approval; owner must add owner-approved');
-              const templateOK = completeTemplate(pr.body);
-              await status('pr-template', templateOK ? 'success' : 'failure', templateOK
-                ? 'AI, change and verification fields are filled in' : 'Fill in AI assistance, What changed and How verified sections');
-              if (!allowed || !templateOK) core.setFailed('Required PR governance checks did not pass');
-            } catch (error) {
-              if (sha) {
-                await status('risk-gate', 'error', 'Evaluation failed; inspect the trusted workflow run');
-                await status('pr-template', 'error', 'Evaluation failed; inspect the trusted workflow run');
-              }
-              throw error;
-            }
+          mode: gate
+          record-label: 'true'
+
+  evaluate:
+    name: Evaluate PR governance
+    needs: record_label
+    # A skipped recorder is the normal case for every other event.
+    if: >-
+      always() && needs.record_label.result != 'cancelled' &&
+      (github.event_name != 'issue_comment' ||
+       (github.event.issue.pull_request &&
+        (github.event.comment.user.type == 'Bot' ||
+         contains(github.event.comment.body || '', 'codex-review'))))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      statuses: write
+      actions: write
+    # Job-level, so an irrelevant comment skips the job without cancelling an
+    # evaluation already running. Label evidence no longer rides on this run.
+    concurrency:
+      group: pr-governance-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number || github.run_id }}
+      cancel-in-progress: true
+    steps:
+      - name: Evaluate
+        uses: QuantStrategyLab/.github/pr-governance@eec647dfa42e27f2caa0dc0e0ba289155488fe86
+        env:
+          GOVERNANCE_OWNER_ID: ${{ vars.RISK_GATE_OWNER_ID }}
+          GOVERNANCE_OWNER_LOGIN: ${{ vars.RISK_GATE_OWNER }}
+          GOVERNANCE_REVIEWERS_JSON: ${{ vars.GOVERNANCE_REVIEWERS_JSON }}
+          # Optional: a repository that keeps account identifiers out of public
+          # source configures the reviewer here instead of in policy.json.
+          GOVERNANCE_REVIEWER_APP_ID: ${{ vars.RISK_GATE_REVIEWER_APP_ID }}
+          GOVERNANCE_REVIEWER_USER_ID: ${{ vars.RISK_GATE_REVIEWER_USER_ID }}
+          GOVERNANCE_REVIEWER_LOGIN: ${{ vars.RISK_GATE_REVIEWER_LOGIN }}
+        with:
+          mode: gate
+          record-label: 'false'
