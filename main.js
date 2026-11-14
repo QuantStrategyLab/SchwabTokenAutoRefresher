@@ -7,7 +7,7 @@ const { TOTP } = require('otpauth');
 const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
 const path = require('path');
 const fs = require('fs');
-const { looksLikeCredentialOrRiskBanner } = require('./lib/auth_retry');
+const { isLoginTemporarilyUnavailable, looksLikeCredentialOrRiskBanner } = require('./lib/auth_retry');
 const {
     extractAuthorizationCodeFromUrl,
     summarizeAuthorizationCode,
@@ -259,13 +259,14 @@ async function navigateToLoginForm(page, authUrl) {
     return { loginInput, passwordInput };
 }
 
-async function detectLoginPageRejection(page) {
+async function checkLoginPage(page) {
     const bodyText = await page.locator('body').innerText({ timeout: 2000 }).catch(() => '');
-    if (looksLikeCredentialOrRiskBanner(bodyText)) {
-        return bodyText;
+    if (isLoginTemporarilyUnavailable(bodyText)) {
+        throw new Error('Schwab login temporarily unavailable.');
     }
-
-    return null;
+    if (looksLikeCredentialOrRiskBanner(bodyText)) {
+        throw new Error(`Login page rejected credentials or flagged risk: ${sanitizeError(bodyText)}`);
+    }
 }
 
 async function waitForFirstVisible(candidates, timeout, description) {
@@ -459,10 +460,7 @@ async function runRefreshOnce() {
         await page.getByRole('button', { name: 'Log in' }).click();
         await page.waitForTimeout(3000);
 
-        const rejectionText = await detectLoginPageRejection(page);
-        if (rejectionText) {
-            throw new Error(`Login page rejected credentials or flagged risk: ${sanitizeError(rejectionText)}`);
-        }
+        await checkLoginPage(page);
 
         console.log("3. Processing 2FA code...");
         try {
@@ -474,6 +472,9 @@ async function runRefreshOnce() {
             const rejectionText = [diagnostics.title, diagnostics.bodyTextPreview, bodyText]
                 .filter(Boolean)
                 .join(' ');
+            if (isLoginTemporarilyUnavailable(rejectionText)) {
+                throw new Error('Schwab login temporarily unavailable.');
+            }
             if (looksLikeCredentialOrRiskBanner(rejectionText)) {
                 throw new Error(`Login page rejected credentials or flagged risk during 2FA step: ${sanitizeError(rejectionText)}`);
             }

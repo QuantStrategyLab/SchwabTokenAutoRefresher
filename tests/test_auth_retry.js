@@ -93,6 +93,11 @@ function loadSyntheticMain(scenario = {}) {
     });
     const source = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
     vm.runInContext(source, context);
+    if (scenario.lateLoginUnavailable) {
+        vm.runInContext(`
+            submitTwoFactorCode = async () => { throw new Error('security code input unavailable'); };
+        `, context);
+    }
     const exchange = vm.runInContext('exchangeCodeForToken', context);
     context.syntheticExchange = async () => {
         counts.exchanges += 1;
@@ -105,7 +110,9 @@ function loadSyntheticMain(scenario = {}) {
         validateEnv = () => {};
         waitForFreshTotpWindow = async () => {};
         saveScreenshot = async () => {};
-        collectPageDiagnostics = async () => ({ title: '', bodyTextPreview: '' });
+        collectPageDiagnostics = async () => ({ title: '', bodyTextPreview: ${JSON.stringify(
+            scenario.lateLoginUnavailable ? 'Login is temporarily unavailable.' : '',
+        )} });
         exchangeCodeForToken = syntheticExchange;
         updateAndCleanupSecrets = syntheticWrite;
         smartClick = syntheticConsent;
@@ -125,6 +132,19 @@ function loadSyntheticMain(scenario = {}) {
     assert.strictEqual(looksLikeCredentialOrRiskBanner('We can’t log you in right now.'), true);
     assert.strictEqual(looksLikeCredentialOrRiskBanner('Login ID Password'), false);
     assert.strictEqual(looksLikeCredentialOrRiskBanner('Investing involves risk.'), false);
+    const unavailable = loadSyntheticMain({
+        banner: 'Login is temporarily unavailable. Please try again later or call customer support.',
+    });
+    await assert.rejects(unavailable.main(), /^Error: Schwab login temporarily unavailable\.$/);
+    assert.strictEqual(unavailable.counts.logins, 1);
+    assert.strictEqual(unavailable.counts.codes, 0);
+    assert.strictEqual(unavailable.counts.exchanges, 0);
+    assert.strictEqual(unavailable.counts.writes, 0);
+    const delayedBanner = loadSyntheticMain({ lateLoginUnavailable: true });
+    await assert.rejects(delayedBanner.main(), /^Error: Schwab login temporarily unavailable\.$/);
+    assert.strictEqual(delayedBanner.counts.logins, 1);
+    assert.strictEqual(delayedBanner.counts.codes, 0);
+    assert.strictEqual(delayedBanner.counts.writes, 0);
     const normal = loadSyntheticMain();
     await normal.main();
     assert.strictEqual(normal.counts.launches, 1);

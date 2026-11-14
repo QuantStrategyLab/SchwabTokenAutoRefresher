@@ -37,14 +37,18 @@ const { notifyRefreshFailure } = require('../scripts/notify_refresh_failure');
     for (const config of [{}, { TELEGRAM_TOKEN: 'synthetic' }, { GLOBAL_TELEGRAM_CHAT_ID: 'synthetic' }]) {
         await assert.rejects(notifyRefreshFailure(config, forbidden), /requires TELEGRAM_TOKEN/);
     }
-    for (const request of [
-        async () => ({ ok: false }),
-        async () => ({ ok: true, json: async () => ({ ok: false }) }),
-        async () => { throw new Error('synthetic-token must not leak'); },
-        async () => ({ ok: true, json: async () => { throw new Error('bad JSON'); } }),
+    for (const [request, reason] of [
+        [async () => ({ ok: false, status: 403 }), 'HTTP 403'],
+        [async () => ({ ok: true, json: async () => ({ ok: false, error_code: 400,
+            description: 'synthetic-token synthetic-chat' }) }), 'Telegram API 400'],
+        [async () => { throw new Error('synthetic-token must not leak'); }, 'network request failed'],
+        [async () => { throw new DOMException('synthetic-chat must not leak', 'TimeoutError'); }, 'request timed out'],
+        [async () => ({ ok: true, json: async () => { throw new Error('bad JSON'); } }), 'invalid Telegram API response'],
     ]) {
         await assert.rejects(notifyRefreshFailure(env, request), error => {
-            assert.strictEqual(error.message, 'Telegram refresh failure alert delivery failed.');
+            assert.strictEqual(error.message, `Telegram refresh failure alert delivery failed (2/2): ${reason}.`);
+            assert.ok(!error.message.includes(env.TELEGRAM_TOKEN));
+            assert.ok(!error.message.includes('synthetic-chat'));
             return true;
         });
     }

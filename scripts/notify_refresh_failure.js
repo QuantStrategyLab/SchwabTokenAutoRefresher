@@ -7,22 +7,40 @@ async function notifyRefreshFailure(env = process.env, request = fetch) {
 
     const runUrl = `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`;
     const text = `Schwab Token Auto Refresher 刷新失败。仅使用直连，未尝试代理。请检查工作流：\n${runUrl}`;
-    let failed = false;
+    const failures = [];
     for (const chat of chats) {
+        let response;
         try {
-            const response = await request(`https://api.telegram.org/bot${token}/sendMessage`, {
+            response = await request(`https://api.telegram.org/bot${token}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }),
                 signal: AbortSignal.timeout(15000),
             });
-            if (!response.ok || (await response.json()).ok !== true) failed = true;
-        } catch {
+        } catch (error) {
             // Request errors can include the bot token in the URL; never log them.
-            failed = true;
+            failures.push(error?.name === 'TimeoutError' ? 'request timed out' : 'network request failed');
+            continue;
+        }
+        if (!response.ok) {
+            const status = response.status;
+            failures.push(Number.isInteger(status) && status >= 400 && status <= 599
+                ? `HTTP ${status}` : 'HTTP request rejected');
+            continue;
+        }
+        try {
+            const payload = await response.json();
+            if (payload?.ok === true) continue;
+            const code = payload?.error_code;
+            failures.push(Number.isInteger(code) && code >= 400 && code <= 599
+                ? `Telegram API ${code}` : 'Telegram API rejected the request');
+        } catch {
+            failures.push('invalid Telegram API response');
         }
     }
-    if (failed) throw new Error('Telegram refresh failure alert delivery failed.');
+    if (failures.length) {
+        throw new Error(`Telegram refresh failure alert delivery failed (${failures.length}/${chats.length}): ${[...new Set(failures)].join(', ')}.`);
+    }
 }
 
 if (require.main === module) {
