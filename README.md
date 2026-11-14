@@ -80,6 +80,8 @@ Configure `TELEGRAM_TOKEN` (or the existing `TG_TOKEN`) and
 `GLOBAL_TELEGRAM_CHAT_ID` as GitHub Actions secrets for the unified bot.
 Tests use simulated requests and do not send real alerts.
 
+Successful refreshes record their UTC completion time in the GitHub Actions run summary.
+
 Automatic proxy fallback and manual `proxy_mode` were retired on 2026-11-02.
 The existing `SCHWAB_PROXY_URL` secret is retained but is no longer read.
 `SCHWAB_FORCE_PROXY_FIRST` is ignored. Both browser login and token exchange

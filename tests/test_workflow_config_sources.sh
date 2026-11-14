@@ -27,7 +27,7 @@ grep -Fq 'SCHWAB_USERNAME: ${{ secrets.SCHWAB_USERNAME }}' "$workflow_file"
 grep -Fq 'SCHWAB_PASSWORD: ${{ secrets.SCHWAB_PASSWORD }}' "$workflow_file"
 grep -Fq 'SCHWAB_TOTP_SECRET: ${{ secrets.SCHWAB_TOTP_SECRET }}' "$workflow_file"
 grep -Fq 'permissions:' "$workflow_file"
-grep -Fq 'contents: write' "$workflow_file"
+grep -Fq 'contents: read' "$workflow_file"
 grep -Fq 'CHROME_VERSION="147.0.7727.137-1"' "$workflow_file"
 grep -Fq 'https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/${CHROME_DEB}' "$workflow_file"
 grep -Fq 'sudo apt install -y --allow-downgrades "./${CHROME_DEB}"' "$workflow_file"
@@ -38,7 +38,7 @@ grep -Fq '#continueButton' "$repo_dir/main.js"
 grep -Fq 'upload_debug_artifacts:' "$workflow_file"
 grep -Fq 'Upload Redacted Diagnostics' "$workflow_file"
 grep -Fq "inputs.upload_debug_artifacts == 'true'" "$workflow_file"
-grep -Fq '            *_diagnostics.json' "$workflow_file"
+grep -Fq '          path: ${{ runner.temp }}/redacted-diagnostics' "$workflow_file"
 
 if grep -Fq 'google-chrome-stable_current_amd64.deb' "$workflow_file"; then
   echo "workflow should not install floating Google Chrome stable anymore" >&2
@@ -69,3 +69,12 @@ if grep -Fq 'secrets.SCHWAB_REDIRECT_URI' "$workflow_file"; then
   echo "workflow should not read SCHWAB_REDIRECT_URI from secrets anymore" >&2
   exit 1
 fi
+
+if grep -Eq 'contents: write|git push|git checkout -B logs' "$workflow_file"; then
+  echo "Runtime diagnostics must not be committed to a public branch" >&2
+  exit 1
+fi
+
+grep -Fq 'Scan diagnostics before upload' "$workflow_file"
+grep -Fq "steps.scan_diagnostics.outcome == 'success'" "$workflow_file"
+grep -Fq '$GITHUB_STEP_SUMMARY' "$workflow_file"

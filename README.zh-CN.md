@@ -61,6 +61,8 @@ node tests/test_auth_code_extraction.js
 
 为统一 bot 配置 GitHub Actions secrets：`TELEGRAM_TOKEN`（或已有的 `TG_TOKEN`）和 `GLOBAL_TELEGRAM_CHAT_ID`。测试使用模拟请求，不发送真实告警。
 
+刷新成功时，GitHub Actions 运行摘要会记录 UTC 完成时间。
+
 自动代理回退和手动 `proxy_mode` 已于 2026-11-02 停用。保留已有的 `SCHWAB_PROXY_URL` secret，但不再读取；`SCHWAB_FORCE_PROXY_FIRST` 不再生效。浏览器登录和 token 交换均使用直连，即使环境中存在标准代理变量。
 
 ## 仓库结构
