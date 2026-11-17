@@ -37,7 +37,7 @@ bash tests/test_workflow_config_sources.sh
 `tests/test_workflow_config_sources.sh` runs with `bash`, not `node`. CI installs
 a pinned Chrome build and runs the remaining Node tests.
 
-Organization documentation rules are checked by `python scripts/check_style.py --phase 2` (`Documentation check` in CI).
+Organization documentation rules run in CI via `QuantStrategyLab/.github/.github/workflows/docs-acceptance.yml` (`Documentation check`), or offline from a sibling `.github` checkout with `python3 ../.github/scripts/check_style.py --root . --phase 2`.
 
 ## Naming and documentation
 
