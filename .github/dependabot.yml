@@ -4,6 +4,8 @@ updates:
   directory: "/"
   schedule:
     interval: "weekly"
+  commit-message:
+    prefix: "chore"
   open-pull-requests-limit: 5
   ignore:
   - dependency-name: "*"
@@ -13,8 +15,10 @@ updates:
   directory: "/"
   schedule:
     interval: "weekly"
+  commit-message:
+    prefix: "chore"
   groups:
-    actions-minor-and-patch:
+    actions:
       patterns:
         - "*"
   open-pull-requests-limit: 3
