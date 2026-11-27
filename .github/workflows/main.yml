@@ -86,7 +86,7 @@ jobs:
       - name: Scan diagnostics before upload
         id: scan_diagnostics
         if: failure() && steps.stage_diagnostics.outcome == 'success'
-        uses: QuantStrategyLab/.github/actions/scan-before-publish@925d718e440bd5cc7c4537ffef2fd53a2f0e654d # No release tag published
+        uses: QuantStrategyLab/.github/actions/scan-before-publish@9fdc77ecc83bdfadf520e57c77b7e72c8ef4e251 # No release tag published
         with:
           path: ${{ runner.temp }}/redacted-diagnostics
 
