@@ -48,14 +48,14 @@ node tests/test_auth_code_extraction.js
 | `SCHWAB_API_KEY` | 是 | 无 | OAuth 应用 key。 |
 | `SCHWAB_APP_SECRET` | 是 | 无 | OAuth 应用 secret。 |
 | `SCHWAB_REDIRECT_URI` | 是 | 无 | 在应用中登记的 OAuth 回调地址。 |
-| `GCP_PROJECT_ID` | 是 | 无 | 存放密钥的 Google Cloud 项目。 |
-| `GCP_SECRET_ID` | 是 | 无 | 要更新的 Secret Manager 密钥。 |
+| `GCP_PROJECT_ID` | 是（Secret） | 无 | 存放密钥的 Google Cloud 项目。 |
+| `GCP_SECRET_ID` | 是（Secret） | 无 | 要更新的 Secret Manager 密钥。 |
 | `GCP_SA_KEY` | 否 | 环境默认凭据 | 仍使用服务账号密钥的本地调用者可用。 |
 | `GCP_SECRET_VERSION_RETENTION` | 否 | `1` | 保留的密钥版本数量；更早的版本会被永久销毁，无法恢复。 |
 | `TELEGRAM_TOKEN` | 工作流告警需要 | `TG_TOKEN` | 统一 Telegram bot（QSL 资产管家 bot）的 token。 |
 | `GLOBAL_TELEGRAM_CHAT_ID` | 工作流告警需要 | 无 | 告警 chat ID，多个 ID 用逗号、分号或空白分隔。 |
 
-定时工作流使用 GitHub OIDC。设置 GitHub 变量 `GCP_WORKLOAD_IDENTITY_PROVIDER` 和 `GCP_WORKLOAD_IDENTITY_SERVICE_ACCOUNT`，让 Google 只信任本仓库默认分支的刷新工作流。把刷新用到的 Secret Manager 版本操作权限限制到目标密钥。
+定时工作流使用 GitHub OIDC。请将 `GCP_PROJECT_ID`、`GCP_SECRET_ID`、`GCP_WORKLOAD_IDENTITY_PROVIDER` 和 `GCP_WORKLOAD_IDENTITY_SERVICE_ACCOUNT` 配置为 GitHub Actions **secrets**（`SCHWAB_REDIRECT_URI` 保持为 GitHub variable），让 Google 只信任本仓库默认分支的刷新工作流。把刷新用到的 Secret Manager 版本操作权限限制到目标密钥。
 
 工作流只进行一次直连刷新。失败时发送带工作流链接的 Telegram 告警，并保留任务失败状态。告警发送失败或缺少 bot 配置时，告警步骤也会失败。消息不包含刷新错误详情、凭据或 token 响应。
 
