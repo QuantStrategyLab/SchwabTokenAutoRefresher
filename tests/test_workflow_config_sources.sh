@@ -4,12 +4,12 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
 workflow_file="$repo_dir/.github/workflows/main.yml"
 
-grep -Fq 'GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}' "$workflow_file"
-grep -Fq 'GCP_SECRET_ID: ${{ vars.GCP_SECRET_ID }}' "$workflow_file"
+grep -Fq 'GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}' "$workflow_file"
+grep -Fq 'GCP_SECRET_ID: ${{ secrets.GCP_SECRET_ID }}' "$workflow_file"
 grep -Fq 'SCHWAB_REDIRECT_URI: ${{ vars.SCHWAB_REDIRECT_URI }}' "$workflow_file"
 grep -Fq 'id-token: write' "$workflow_file"
-grep -Fq 'workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}' "$workflow_file"
-grep -Fq 'service_account: ${{ vars.GCP_WORKLOAD_IDENTITY_SERVICE_ACCOUNT }}' "$workflow_file"
+grep -Fq 'workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}' "$workflow_file"
+grep -Fq 'service_account: ${{ secrets.GCP_WORKLOAD_IDENTITY_SERVICE_ACCOUNT }}' "$workflow_file"
 grep -Fq 'github.ref_name == github.event.repository.default_branch' "$workflow_file"
 if grep -Fq 'GCP_SA_KEY' "$workflow_file"; then
   echo "workflow must use federated Google credentials" >&2
@@ -55,13 +55,18 @@ if grep -Fq '            *.png' "$workflow_file"; then
   exit 1
 fi
 
-if grep -Fq 'secrets.GCP_PROJECT_ID' "$workflow_file"; then
-  echo "workflow should not read GCP_PROJECT_ID from secrets anymore" >&2
+if grep -Fq 'vars.GCP_PROJECT_ID' "$workflow_file"; then
+  echo "workflow should read GCP_PROJECT_ID from secrets instead of public vars" >&2
   exit 1
 fi
 
-if grep -Fq 'secrets.GCP_SECRET_ID' "$workflow_file"; then
-  echo "workflow should not read GCP_SECRET_ID from secrets anymore" >&2
+if grep -Fq 'vars.GCP_SECRET_ID' "$workflow_file"; then
+  echo "workflow should read GCP_SECRET_ID from secrets instead of public vars" >&2
+  exit 1
+fi
+
+if grep -Eq 'vars\.GCP_WORKLOAD_IDENTITY_PROVIDER|vars\.GCP_WORKLOAD_IDENTITY_SERVICE_ACCOUNT' "$workflow_file"; then
+  echo "workflow should read WIF settings from secrets instead of public vars" >&2
   exit 1
 fi
 
